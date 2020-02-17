@@ -21,8 +21,14 @@
   <PropertyGroup Condition="'$(TargetGroup)' == 'netcoreapp'">
     <DefineConstants>$(DefineConstants);netcoreapp;</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(TargetGroup)' == 'netcoreapp' AND '$(TargetFramework)' != 'netcoreapp2.1'">
-    <DefineConstants>$(DefineConstants);NETCORE3</DefineConstants>
+  <PropertyGroup Condition="'$(TargetGroup)' == 'netcoreapp' AND '$(TargetFramework)' == 'netcoreapp2.1'">
+    <DefineConstants>$(DefineConstants);netcoreapp21;netcoreapp21_and_later</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetGroup)' == 'netcoreapp' AND '$(TargetFramework)' == 'netcoreapp3.1'">
+    <DefineConstants>$(DefineConstants);netcoreapp31;netcoreapp21_and_later;netcoreapp31_and_later</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net5.0'">
+    <DefineConstants>$(DefineConstants);net50;netcoreapp21_and_later;netcoreapp31_and_later;net50_and_later</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <DebugType>portable</DebugType>
@@ -180,6 +186,13 @@
   <ItemGroup Condition="'$(OSGroup)' != 'AnyOS' AND '$(TargetGroup)' == 'netcoreapp' AND '$(BuildSimulator)' == 'true'">
     <Compile Include="Microsoft\Data\SqlClient\SimulatorEnclaveProvider.NetCoreApp.cs" />
   </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('netcoreapp2')) or $(TargetFramework.StartsWith('netcoreapp3')) or $(TargetFramework.StartsWith('netstandard2'))">
+    <Compile Include="Common\Data\Common\DbBatch.cs" />
+    <Compile Include="Common\Data\Common\DbBatchCommand.cs" />
+  </ItemGroup>
+  <ItemGroup Condition ="$(TargetFramework.StartsWith('netstandard2.1')) or ($(TargetFramework.StartsWith('netcoreapp')) and !$(TargetFramework.StartsWith('netcoreapp2')))">
+    <Compile Include="Common\Data\Common\DbBatch.IAsyncDisposable.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OSGroup)' != 'AnyOS' AND '$(TargetGroup)' == 'netstandard'">
     <Compile Include="Microsoft\Data\SqlClient\SqlDelegatedTransaction.NetStandard.cs" />
     <Compile Include="Microsoft\Data\SqlClient\TdsParser.NetStandard.cs" />
@@ -278,6 +291,8 @@
     <Compile Include="Microsoft\Data\SqlClient\RowsCopiedEventArgs.cs" />
     <Compile Include="Microsoft\Data\SqlClient\RowsCopiedEventHandler.cs" />
     <Compile Include="Microsoft\Data\SqlClient\SortOrder.cs" />
+    <Compile Include="Microsoft\Data\SqlClient\SqlBatch.cs" />
+    <Compile Include="Microsoft\Data\SqlClient\SqlBatchCommand.cs" />
     <Compile Include="Microsoft\Data\SqlClient\SqlBuffer.cs" />
     <Compile Include="Microsoft\Data\SqlClient\SqlBulkCopy.cs" />
     <Compile Include="Microsoft\Data\SqlClient\SqlBulkCopyColumnMapping.cs" />

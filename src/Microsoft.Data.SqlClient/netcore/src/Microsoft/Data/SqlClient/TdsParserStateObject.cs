@@ -954,7 +954,7 @@ namespace Microsoft.Data.SqlClient
 
         internal void ThrowExceptionAndWarning(bool callerHasConnectionLock = false, bool asyncClose = false)
         {
-            _parser.ThrowExceptionAndWarning(this, callerHasConnectionLock, asyncClose);
+            _parser.ThrowExceptionAndWarning(this, null, callerHasConnectionLock, asyncClose);
         }
 
         ////////////////////////////////////////////

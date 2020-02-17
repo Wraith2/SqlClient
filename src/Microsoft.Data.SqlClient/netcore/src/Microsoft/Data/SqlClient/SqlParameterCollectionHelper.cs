@@ -15,7 +15,16 @@ namespace Microsoft.Data.SqlClient
     {
         private List<SqlParameter> _items;
 
-        /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlParameterCollection.xml' path='docs/members[@name="SqlParameterCollection"]/Count/*' />
+        internal SqlParameterCollection(int capacity)
+        {
+            if (capacity <= 0)
+            {
+                capacity = 1; // user tried to set a capacity but got it wrong, set it to 1 so they donn't get too many
+            }
+            _items = new List<SqlParameter>(capacity);
+        }
+
+        /// <include file='..\..\..\..\..\..\..\doc\snippets\Microsoft.Data.SqlClient\SqlParameterCollection.xml' path='docs/members[@name="SqlParameterCollection"]/Count/*' />
         override public int Count
         {
             get

@@ -700,7 +700,7 @@ namespace Microsoft.Data.SqlClient.SNI
         internal static void SetKeepAliveValues(ref Socket socket)
         {
 
-#if NETCORE3
+#if netcoreapp31
             socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 1);
             socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 30);

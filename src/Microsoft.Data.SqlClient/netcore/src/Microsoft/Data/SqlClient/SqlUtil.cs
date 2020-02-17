@@ -1095,7 +1095,7 @@ namespace Microsoft.Data.SqlClient
         {
             SqlErrorCollection errors = new SqlErrorCollection();
             errors.Add(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, null, System.SRHelper.GetString(SR.SQLCR_NextAttemptWillExceedQueryTimeout), "", 0));
-            SqlException exc = SqlException.CreateException(errors, "", connectionId, innerException);
+            SqlException exc = SqlException.CreateException(errors, "", connectionId, innerException: innerException);
             return exc;
         }
 
@@ -1111,7 +1111,7 @@ namespace Microsoft.Data.SqlClient
         {
             SqlErrorCollection errors = new SqlErrorCollection();
             errors.Add(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, null, System.SRHelper.GetString(SR.SQLCR_AllAttemptsFailed), "", 0));
-            SqlException exc = SqlException.CreateException(errors, "", connectionId, innerException);
+            SqlException exc = SqlException.CreateException(errors, "", connectionId, innerException: innerException);
             return exc;
         }
 
@@ -1184,7 +1184,7 @@ namespace Microsoft.Data.SqlClient
 
             SqlErrorCollection errors = new SqlErrorCollection();
             errors.Add(new SqlError(0, 0, TdsEnums.FATAL_ERROR_CLASS, null, System.SRHelper.GetString(SR.SQL_UnsupportedFeature), "", 0));
-            SqlException exc = SqlException.CreateException(errors, "", internalConnection, innerException);
+            SqlException exc = SqlException.CreateException(errors, "", internalConnection, innerException: innerException);
             return exc;
         }
 
@@ -1654,7 +1654,7 @@ namespace Microsoft.Data.SqlClient
                 sqlErs.Add(new SqlError(infoNumber: 0, errorState: (byte)0x00, errorClass: (byte)TdsEnums.MIN_ERROR_CLASS, server: serverName, errorMessage: e.Message, procedure: null, lineNumber: 0));
             }
 
-            return SqlException.CreateException(sqlErs, "", null, exceptionToInclude);
+            return SqlException.CreateException(sqlErs, "", null, innerException: exceptionToInclude);
         }
 
         internal static Exception ColumnDecryptionFailed(string columnName, string serverName, Exception e)
