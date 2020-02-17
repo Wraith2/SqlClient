@@ -18,35 +18,17 @@ namespace Microsoft.Data.SqlClient
         private const string SqlIdentifierPattern = "^@[\\p{Lo}\\p{Lu}\\p{Ll}\\p{Lm}_@#][\\p{Lo}\\p{Lu}\\p{Ll}\\p{Lm}\\p{Nd}\uff3f_@#\\$]*$";
         private static readonly Regex s_sqlIdentifierParser = new Regex(SqlIdentifierPattern, RegexOptions.ExplicitCapture | RegexOptions.Singleline);
 
-        private List<LocalCommand> _commandList = new List<LocalCommand>();
-
-        private SqlCommand _batchCommand;
-
         private static int _objectTypeCount; // EventSource Counter
         internal readonly int _objectID = System.Threading.Interlocked.Increment(ref _objectTypeCount);
 
-        private sealed class LocalCommand
-        {
-            internal readonly string CommandText;
-            internal readonly SqlParameterCollection Parameters;
-            internal readonly int ReturnParameterIndex;
-            internal readonly CommandType CmdType;
-            internal readonly SqlCommandColumnEncryptionSetting ColumnEncryptionSetting;
 
-            internal LocalCommand(string commandText, SqlParameterCollection parameters, int returnParameterIndex, CommandType cmdType, SqlCommandColumnEncryptionSetting columnEncryptionSetting)
-            {
-                Debug.Assert(0 <= commandText.Length, "no text");
-                CommandText = commandText;
-                Parameters = parameters;
-                ReturnParameterIndex = returnParameterIndex;
-                CmdType = cmdType;
-                ColumnEncryptionSetting = columnEncryptionSetting;
-            }
-        }
+        private SqlCommand _batchCommand;
+        private List<SqlBatchCommand> _commandList;
 
-        internal SqlCommandSet() : base()
+        internal SqlCommandSet()
         {
             _batchCommand = new SqlCommand();
+            _commandList = new List<SqlBatchCommand>();
         }
 
         private SqlCommand BatchCommand
@@ -64,11 +46,11 @@ namespace Microsoft.Data.SqlClient
 
         internal int CommandCount => CommandList.Count;
 
-        private List<LocalCommand> CommandList
+        private List<SqlBatchCommand> CommandList
         {
             get
             {
-                List<LocalCommand> commandList = _commandList;
+                List<SqlBatchCommand> commandList = _commandList;
                 if (null == commandList)
                 {
                     throw ADP.ObjectDisposed(this);
@@ -204,19 +186,7 @@ namespace Microsoft.Data.SqlClient
                 }
             }
 
-            int returnParameterIndex = -1;
-            if (null != parameters)
-            {
-                for (int i = 0; i < parameters.Count; ++i)
-                {
-                    if (ParameterDirection.ReturnValue == parameters[i].Direction)
-                    {
-                        returnParameterIndex = i;
-                        break;
-                    }
-                }
-            }
-            LocalCommand cmd = new LocalCommand(cmdText, parameters, returnParameterIndex, command.CommandType, command.ColumnEncryptionSetting);
+            SqlBatchCommand cmd = new SqlBatchCommand(cmdText, parameters, command.CommandType, command.ColumnEncryptionSetting);
             CommandList.Add(cmd);
         }
 
@@ -255,7 +225,7 @@ namespace Microsoft.Data.SqlClient
                 batchCommand.Parameters.Clear();
                 batchCommand.CommandText = null;
             }
-            List<LocalCommand> commandList = _commandList;
+            List<SqlBatchCommand> commandList = _commandList;
             if (null != commandList)
             {
                 commandList.Clear();
@@ -282,16 +252,14 @@ namespace Microsoft.Data.SqlClient
 
             try
             {
-                BatchCommand.BatchRPCMode = true;
-                BatchCommand.ClearBatchCommand();
+                BatchCommand.SetBatchRPCMode(true, _commandList.Count);
                 BatchCommand.Parameters.Clear();
-                for (int ii = 0; ii < _commandList.Count; ii++)
+                for (int index = 0; index < _commandList.Count; index++)
                 {
-                    LocalCommand cmd = _commandList[ii];
-                    BatchCommand.AddBatchCommand(cmd.CommandText, cmd.Parameters, cmd.CmdType, cmd.ColumnEncryptionSetting);
+                    BatchCommand.AddBatchCommand(_commandList[index]);
                 }
-
-                return BatchCommand.ExecuteBatchRPCCommand();
+                BatchCommand.SetBatchRPCModeReadyToExecute();
+                return BatchCommand.ExecuteNonQuery();
             }
             finally
             {

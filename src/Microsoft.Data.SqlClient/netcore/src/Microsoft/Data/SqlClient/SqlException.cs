@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Data.Common;
 
 namespace Microsoft.Data.SqlClient
 {
@@ -22,6 +23,7 @@ namespace Microsoft.Data.SqlClient
 
         private SqlErrorCollection _errors;
         private Guid _clientConnectionId = Guid.Empty;
+        private SqlBatchCommand _batchCommand;
 
         private SqlException(string message, SqlErrorCollection errorCollection, Exception innerException, Guid conId) : base(message, innerException)
         {
@@ -121,13 +123,27 @@ namespace Microsoft.Data.SqlClient
             get { return Errors.Count > 0 ? Errors[0].State : default; }
         }
 
-        /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/Source/*' />
-        override public string Source
+        /// <include file='..\..\..\..\..\..\..\doc\snippets\Microsoft.Data.SqlClient\SqlException.xml' path='docs/members[@name="SqlException"]/Source/*' />
+        public override string Source
         {
             get { return TdsEnums.SQL_PROVIDER_NAME; }
         }
 
-        /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/ToString/*' />
+        /// <include file='..\..\..\..\..\..\..\doc\snippets\Microsoft.Data.SqlClient\SqlException.xml' path='docs/members[@name="SqlException"]/BatchCommand/*' />
+#if net50_and_later
+        public override DbBatchCommand BatchCommand => SqlBatchCommand;
+#else
+        public DbBatchCommand BatchCommand => SqlBatchCommand;
+#endif
+
+        /// <include file='..\..\..\..\..\..\..\doc\snippets\Microsoft.Data.SqlClient\SqlException.xml' path='docs/members[@name="SqlException"]/SqlBatchCommand/*' />
+        public SqlBatchCommand SqlBatchCommand
+        {
+            get => _batchCommand;
+            internal set => _batchCommand = value;
+        }
+
+        /// <include file='..\..\..\..\..\..\..\doc\snippets\Microsoft.Data.SqlClient\SqlException.xml' path='docs/members[@name="SqlException"]/ToString/*' />
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder(base.ToString());
@@ -158,16 +174,16 @@ namespace Microsoft.Data.SqlClient
             return sb.ToString();
         }
 
-        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion)
+        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion, SqlBatchCommand batchCommand = null)
         {
-            return CreateException(errorCollection, serverVersion, Guid.Empty);
+            return CreateException(errorCollection, serverVersion, Guid.Empty, batchCommand);
         }
 
-        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion, SqlInternalConnectionTds internalConnection, Exception innerException = null)
+        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion, SqlInternalConnectionTds internalConnection, SqlBatchCommand batchCommand = null, Exception innerException = null)
         {
             Guid connectionId = (internalConnection == null) ? Guid.Empty : internalConnection._clientConnectionId;
-            var exception = CreateException(errorCollection, serverVersion, connectionId, innerException);
-
+            var exception = CreateException(errorCollection, serverVersion, connectionId, batchCommand, innerException);
+            exception.SqlBatchCommand = batchCommand;
             if (internalConnection != null)
             {
                 if ((internalConnection.OriginalClientConnectionId != Guid.Empty) && (internalConnection.OriginalClientConnectionId != internalConnection.ClientConnectionId))
@@ -184,7 +200,7 @@ namespace Microsoft.Data.SqlClient
             return exception;
         }
 
-        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion, Guid conId, Exception innerException = null)
+        internal static SqlException CreateException(SqlErrorCollection errorCollection, string serverVersion, Guid conId, SqlBatchCommand batchCommand = null, Exception innerException = null)
         {
             Debug.Assert(null != errorCollection && errorCollection.Count > 0, "no errorCollection?");
 
@@ -204,7 +220,7 @@ namespace Microsoft.Data.SqlClient
             }
 
             SqlException exception = new SqlException(message.ToString(), errorCollection, innerException, conId);
-
+            exception.SqlBatchCommand = batchCommand;
             exception.Data.Add("HelpLink.ProdName", "Microsoft SQL Server");
 
             if (!string.IsNullOrEmpty(serverVersion))
@@ -225,6 +241,7 @@ namespace Microsoft.Data.SqlClient
             if (this.Data != null)
                 foreach (DictionaryEntry entry in this.Data)
                     exception.Data.Add(entry.Key, entry.Value);
+            exception._batchCommand = _batchCommand;
             exception._doNotReconnect = this._doNotReconnect;
             return exception;
         }

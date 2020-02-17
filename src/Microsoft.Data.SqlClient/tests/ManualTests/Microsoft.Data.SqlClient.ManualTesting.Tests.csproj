@@ -87,6 +87,7 @@
     <Compile Include="SQL\AsyncTest\BeginExecAsyncTest.cs" />
     <Compile Include="SQL\AsyncTest\BeginExecReaderAsyncTest.cs" />
     <Compile Include="SQL\AsyncTest\XmlReaderAsyncTest.cs" />
+    <Compile Include="SQL\Batch\BatchTests.cs" />
     <Compile Include="SQL\Common\AsyncDebugScope.cs" />
     <Compile Include="SQL\Common\ConnectionPoolWrapper.cs" />
     <Compile Include="SQL\Common\InternalConnectionWrapper.cs" />

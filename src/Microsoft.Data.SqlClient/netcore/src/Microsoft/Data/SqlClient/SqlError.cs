@@ -9,13 +9,13 @@ namespace Microsoft.Data.SqlClient
     /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlError.xml' path='docs/members[@name="SqlError"]/SqlError/*' />
     public sealed class SqlError
     {
-        internal SqlError(int infoNumber, byte errorState, byte errorClass, string server, string errorMessage, string procedure, int lineNumber, uint win32ErrorCode, Exception exception = null)
-            : this(infoNumber, errorState, errorClass, server, errorMessage, procedure, lineNumber, exception)
+        internal SqlError(int infoNumber, byte errorState, byte errorClass, string server, string errorMessage, string procedure, int lineNumber, uint win32ErrorCode, Exception exception = null, int batchIndex = -1)
+            : this(infoNumber, errorState, errorClass, server, errorMessage, procedure, lineNumber, exception, batchIndex)
         {
             Win32ErrorCode = (int)win32ErrorCode;
         }
 
-        internal SqlError(int infoNumber, byte errorState, byte errorClass, string server, string errorMessage, string procedure, int lineNumber, Exception exception = null)
+        internal SqlError(int infoNumber, byte errorState, byte errorClass, string server, string errorMessage, string procedure, int lineNumber, Exception exception = null, int batchIndex = -1)
         {
             Number = infoNumber;
             State = errorState;
@@ -26,6 +26,7 @@ namespace Microsoft.Data.SqlClient
             LineNumber = lineNumber;
             Win32ErrorCode = 0;
             Exception = exception;
+            BatchIndex = batchIndex;
             if (errorClass != 0)
             {
                 SqlClientEventSource.Log.TryTraceEvent("SqlError.ctor | ERR | Info Number {0}, Error State {1}, Error Class {2}, Error Message '{3}', Procedure '{4}', Line Number {5}", infoNumber, (int)errorState, (int)errorClass, errorMessage, procedure ?? "None", (int)lineNumber);
@@ -68,5 +69,7 @@ namespace Microsoft.Data.SqlClient
         internal int Win32ErrorCode { get; private set; }
 
         internal Exception Exception { get; private set; }
+
+        internal int BatchIndex { get; private set; }
     }
 }

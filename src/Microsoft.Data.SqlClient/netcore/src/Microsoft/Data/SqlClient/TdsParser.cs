@@ -1123,7 +1123,7 @@ namespace Microsoft.Data.SqlClient
         }
 
         // Fires a single InfoMessageEvent
-        private void FireInfoMessageEvent(SqlConnection connection, TdsParserStateObject stateObj, SqlError error)
+        private void FireInfoMessageEvent(SqlConnection connection, SqlCommand command, TdsParserStateObject stateObj, SqlError error)
         {
             string serverVersion = null;
 
@@ -1138,7 +1138,7 @@ namespace Microsoft.Data.SqlClient
 
             sqlErs.Add(error);
 
-            SqlException exc = SqlException.CreateException(sqlErs, serverVersion, _connHandler);
+            SqlException exc = SqlException.CreateException(sqlErs, serverVersion, _connHandler, command?.GetCurrentBatchCommand());
 
             bool notified;
             connection.OnInfoMessage(new SqlInfoMessageEventArgs(exc), out notified);
@@ -1172,7 +1172,7 @@ namespace Microsoft.Data.SqlClient
             }
         }
 
-        internal void ThrowExceptionAndWarning(TdsParserStateObject stateObj, bool callerHasConnectionLock = false, bool asyncClose = false)
+        internal void ThrowExceptionAndWarning(TdsParserStateObject stateObj, SqlCommand command = null, bool callerHasConnectionLock = false, bool asyncClose = false)
         {
             Debug.Assert(!callerHasConnectionLock || _connHandler._parserLock.ThreadMayHaveLock(), "Caller claims to have lock, but connection lock is not taken");
 
@@ -1223,11 +1223,24 @@ namespace Microsoft.Data.SqlClient
 
                 if (temp.Count == 1 && temp[0].Exception != null)
                 {
-                    exception = SqlException.CreateException(temp, serverVersion, _connHandler, temp[0].Exception);
+                    exception = SqlException.CreateException(temp, serverVersion, _connHandler, 
+                        batchCommand: command?.GetBatchCommand(temp[0].BatchIndex), 
+                        innerException: temp[0].Exception
+                    );
                 }
                 else
                 {
-                    exception = SqlException.CreateException(temp, serverVersion, _connHandler);
+                    SqlBatchCommand batchCommand = null;
+                    if (temp[0] != null && command != null)
+                    {
+                        int index = temp[0].BatchIndex;
+                        if (temp[0].BatchIndex >= 0)
+                        {
+                            batchCommand = command.GetBatchCommand(index);
+                        }
+                    }
+                    exception = SqlException.CreateException(temp, serverVersion, _connHandler, batchCommand);
+
                 }
             }
 
@@ -1890,11 +1903,17 @@ namespace Microsoft.Data.SqlClient
                         if ((connection != null) && connection.FireInfoMessageEventOnUserErrors)
                         {
                             foreach (SqlError error in stateObj._pendingInfoEvents)
-                                FireInfoMessageEvent(connection, stateObj, error);
+                            {
+                                FireInfoMessageEvent(connection, cmdHandler, stateObj, error);
+                            }
                         }
                         else
+                        {
                             foreach (SqlError error in stateObj._pendingInfoEvents)
+                            {
                                 stateObj.AddWarning(error);
+                            }
+                        }
                     }
                     stateObj._pendingInfoEvents = null;
                 }
@@ -1931,7 +1950,7 @@ namespace Microsoft.Data.SqlClient
                             }
 
                             SqlError error;
-                            if (!TryProcessError(token, stateObj, out error))
+                            if (!TryProcessError(token, stateObj, cmdHandler, out error))
                             {
                                 return false;
                             }
@@ -1960,7 +1979,7 @@ namespace Microsoft.Data.SqlClient
                                     (error.Class <= TdsEnums.MAX_USER_CORRECTABLE_ERROR_CLASS))
                                 {
                                     // Fire SqlInfoMessage here
-                                    FireInfoMessageEvent(connection, stateObj, error);
+                                    FireInfoMessageEvent(connection, cmdHandler, stateObj, error);
                                 }
                                 else
                                 {
@@ -2053,7 +2072,7 @@ namespace Microsoft.Data.SqlClient
                                 }
                                 else
                                 {
-                                    cmdHandler.OnDoneProc();
+                                    cmdHandler.OnDoneProc(stateObj);
                                 }
                             }
 
@@ -2496,14 +2515,14 @@ namespace Microsoft.Data.SqlClient
                     if (RunBehavior.Clean != (RunBehavior.Clean & runBehavior) && !stateObj.IsTimeoutStateExpired)
                     {
                         // Add attention error to collection - if not RunBehavior.Clean!
-                        stateObj.AddError(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, _server, SQLMessage.OperationCancelled(), "", 0));
+                        stateObj.AddError(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, _server, SQLMessage.OperationCancelled(), "", 0, exception: null, batchIndex: cmdHandler?.GetCurrentBatchIndex() ?? -1));
                     }
                 }
             }
 
             if (stateObj.HasErrorOrWarning)
             {
-                ThrowExceptionAndWarning(stateObj);
+                ThrowExceptionAndWarning(stateObj, cmdHandler);
             }
             return true;
         }
@@ -2950,7 +2969,7 @@ namespace Microsoft.Data.SqlClient
             if ((TdsEnums.DONE_ERROR == (TdsEnums.DONE_ERROR & status)) && stateObj.ErrorCount == 0 &&
                   stateObj.HasReceivedError == false && (RunBehavior.Clean != (RunBehavior.Clean & run)))
             {
-                stateObj.AddError(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, _server, SQLMessage.SevereError(), "", 0));
+                stateObj.AddError(new SqlError(0, 0, TdsEnums.MIN_ERROR_CLASS, _server, SQLMessage.SevereError(), "", 0, exception: null, batchIndex: cmd?.GetCurrentBatchIndex() ?? -1));
 
                 if (null != reader)
                 {
@@ -2966,7 +2985,7 @@ namespace Microsoft.Data.SqlClient
             // The server will always break the connection in this case.
             if ((TdsEnums.DONE_SRVERROR == (TdsEnums.DONE_SRVERROR & status)) && (RunBehavior.Clean != (RunBehavior.Clean & run)))
             {
-                stateObj.AddError(new SqlError(0, 0, TdsEnums.FATAL_ERROR_CLASS, _server, SQLMessage.SevereError(), "", 0));
+                stateObj.AddError(new SqlError(0, 0, TdsEnums.FATAL_ERROR_CLASS, _server, SQLMessage.SevereError(), "", 0, exception: null, batchIndex: cmd?.GetCurrentBatchIndex() ?? -1));
 
                 if (null != reader)
                 {
@@ -3785,7 +3804,7 @@ namespace Microsoft.Data.SqlClient
             return true;
         }
 
-        internal bool TryProcessError(byte token, TdsParserStateObject stateObj, out SqlError error)
+        internal bool TryProcessError(byte token, TdsParserStateObject stateObj, SqlCommand command, out SqlError error)
         {
             ushort shortLen;
             byte byteLen;
@@ -3857,8 +3876,12 @@ namespace Microsoft.Data.SqlClient
             {
                 return false;
             }
-
-            error = new SqlError(number, state, errorClass, _server, message, procedure, line);
+            int batchIndex = -1;
+            if (command != null)
+            {
+                batchIndex = command.GetCurrentBatchIndex();
+            }
+            error = new SqlError(number, state, errorClass, _server, message, procedure, line, null, batchIndex);
             return true;
         }
 
@@ -8885,7 +8908,7 @@ namespace Microsoft.Data.SqlClient
             }
         }
 
-        internal Task TdsExecuteRPC(SqlCommand cmd, _SqlRPC[] rpcArray, int timeout, bool inSchema, SqlNotificationRequest notificationRequest, TdsParserStateObject stateObj, bool isCommandProc, bool sync = true,
+        internal Task TdsExecuteRPC(SqlCommand cmd, IList<_SqlRPC> rpcArray, int timeout, bool inSchema, SqlNotificationRequest notificationRequest, TdsParserStateObject stateObj, bool isCommandProc, bool sync = true,
             TaskCompletionSource<object> completion = null, int startRpc = 0, int startParam = 0)
         {
             bool firstCall = (completion == null);
@@ -8947,7 +8970,7 @@ namespace Microsoft.Data.SqlClient
                         stateObj._outputMessageType = TdsEnums.MT_RPC;
                     }
 
-                    for (int ii = startRpc; ii < rpcArray.Length; ii++)
+                    for (int ii = startRpc; ii < rpcArray.Count; ii++)
                     {
                         rpcext = rpcArray[ii];
 
@@ -9078,7 +9101,7 @@ namespace Microsoft.Data.SqlClient
                         } // parameter for loop
 
                         // If this is not the last RPC we are sending, add the batch flag
-                        if (ii < (rpcArray.Length - 1))
+                        if (ii < (rpcArray.Count - 1))
                         {
                             stateObj.WriteByte(TdsEnums.YUKON_RPCBATCHFLAG);
                         }
@@ -9600,7 +9623,7 @@ namespace Microsoft.Data.SqlClient
         }
 
         // This is in its own method to avoid always allocating the lambda in TDSExecuteRPCParameter
-        private void TDSExecuteRPCParameterSetupWriteCompletion(SqlCommand cmd, _SqlRPC[] rpcArray, int timeout, bool inSchema, SqlNotificationRequest notificationRequest, TdsParserStateObject stateObj, bool isCommandProc, bool sync, TaskCompletionSource<object> completion, int startRpc, int startParam, Task writeParamTask)
+        private void TDSExecuteRPCParameterSetupWriteCompletion(SqlCommand cmd, IList<_SqlRPC> rpcArray, int timeout, bool inSchema, SqlNotificationRequest notificationRequest, TdsParserStateObject stateObj, bool isCommandProc, bool sync, TaskCompletionSource<object> completion, int startRpc, int startParam, Task writeParamTask)
         {
             AsyncHelper.ContinueTask(
                 writeParamTask,
