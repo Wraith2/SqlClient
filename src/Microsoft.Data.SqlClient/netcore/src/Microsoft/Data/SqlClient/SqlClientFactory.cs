@@ -54,13 +54,13 @@ namespace Microsoft.Data.SqlClient
 
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CanCreateBatch/*'/>
         public
-#if net50_and_later
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
         override 
 #endif
         bool CanCreateBatch => true;
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CreateBatch/*'/>
         public
-#if net50_and_later
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
         override 
 #endif 
         DbBatch CreateBatch()
@@ -69,7 +69,7 @@ namespace Microsoft.Data.SqlClient
         }
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CreateBatchCommand/*'/>
         public
-#if net50_and_later
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
         override 
 # endif
         DbBatchCommand CreateBatchCommand()

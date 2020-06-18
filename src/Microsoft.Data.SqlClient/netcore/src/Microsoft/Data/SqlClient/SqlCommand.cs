@@ -2474,7 +2474,7 @@ namespace Microsoft.Data.SqlClient
         internal Task<object> ExecuteScalarBatchAsync(CancellationToken cancellationToken)
         {
             _parentOperationStarted = true;
-            Guid operationId = _diagnosticListener.WriteCommandBefore(this);
+            Guid operationId = _diagnosticListener.WriteCommandBefore(this, _transaction);
 
             return ExecuteReaderAsync(cancellationToken).ContinueWith((executeTask) =>
             {
@@ -2485,7 +2485,7 @@ namespace Microsoft.Data.SqlClient
                 }
                 else if (executeTask.IsFaulted)
                 {
-                    _diagnosticListener.WriteCommandError(operationId, this, executeTask.Exception.InnerException);
+                    _diagnosticListener.WriteCommandError(operationId, this, _transaction, executeTask.Exception.InnerException);
                     source.SetException(executeTask.Exception.InnerException);
                 }
                 else
@@ -2504,7 +2504,7 @@ namespace Microsoft.Data.SqlClient
                                 else if (readTask.IsFaulted)
                                 {
                                     reader.Dispose();
-                                    _diagnosticListener.WriteCommandError(operationId, this, readTask.Exception.InnerException);
+                                    _diagnosticListener.WriteCommandError(operationId, this, _transaction, readTask.Exception.InnerException);
                                     source.SetException(readTask.Exception.InnerException);
                                 }
                                 else
@@ -2521,12 +2521,12 @@ namespace Microsoft.Data.SqlClient
                                     }
                                     if (exception != null)
                                     {
-                                        _diagnosticListener.WriteCommandError(operationId, this, exception);
+                                        _diagnosticListener.WriteCommandError(operationId, this, _transaction, exception);
                                         source.SetException(exception);
                                     }
                                     else
                                     {
-                                        _diagnosticListener.WriteCommandAfter(operationId, this);
+                                        _diagnosticListener.WriteCommandAfter(operationId, this, _transaction);
                                         source.SetResult(result);
                                     }
                                 }
@@ -3591,7 +3591,7 @@ namespace Microsoft.Data.SqlClient
                         _SqlRPC rpcDescribeParameterEncryptionRequest = new _SqlRPC();
 
                         // Prepare the describe parameter encryption request.
-                        PrepareDescribeParameterEncryptionRequest(_RPCList[i], ref rpcDescribeParameterEncryptionRequest, i == 0 ? serializedAttestatationParameters : null);
+                        PrepareDescribeParameterEncryptionRequest(_RPCList[i], ref rpcDescribeParameterEncryptionRequest, i == 0 ? serializedAttestationParameters : null);
                         Debug.Assert(rpcDescribeParameterEncryptionRequest != null, "rpcDescribeParameterEncryptionRequest should not be null, after call to PrepareDescribeParameterEncryptionRequest.");
 
                         Debug.Assert(!describeParameterEncryptionRpcOriginalRpcDictionary.ContainsKey(rpcDescribeParameterEncryptionRequest),
