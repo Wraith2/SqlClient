@@ -25,7 +25,7 @@ namespace Microsoft.Data.SqlClient
             _type = CommandType.Text;
         }
 
-        public SqlBatchCommand(string commandText, CommandType commandType = CommandType.Text, IEnumerable<SqlParameter> parameters = null, SqlCommandColumnEncryptionSetting columnEncryptionSetting = SqlCommandColumnEncryptionSetting.UseConnectionSetting)
+        public SqlBatchCommand(string commandText, CommandType commandType = CommandType.Text, IEnumerable<SqlParameter> parameters = null)
         {
             if (string.IsNullOrEmpty(commandText))
             {
@@ -54,15 +54,15 @@ namespace Microsoft.Data.SqlClient
                 }
                 _parameters = parameterCollection;
             }
-            _encryptionSetting = columnEncryptionSetting;
         }
 
         // parameter order is reversed for this internal method to avoid ambiguous call sites with the public constructor
         // this overload is used internally to take the parameters passed instead of copying them
         internal SqlBatchCommand(string commandText, SqlParameterCollection parameterCollection, CommandType commandType, SqlCommandColumnEncryptionSetting columnEncryptionSetting)
-            : this(commandText, commandType, null, columnEncryptionSetting)
+            : this(commandText, commandType, null)
         {
             _parameters = parameterCollection;
+            _encryptionSetting = columnEncryptionSetting;
         }
 
         public override string CommandText { get => _text; set => _text = value; }

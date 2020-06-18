@@ -17,6 +17,7 @@ namespace Microsoft.Data.SqlClient
     {
         private const string SqlIdentifierPattern = "^@[\\p{Lo}\\p{Lu}\\p{Ll}\\p{Lm}_@#][\\p{Lo}\\p{Lu}\\p{Ll}\\p{Lm}\\p{Nd}\uff3f_@#\\$]*$";
         private static readonly Regex s_sqlIdentifierParser = new Regex(SqlIdentifierPattern, RegexOptions.ExplicitCapture | RegexOptions.Singleline);
+        private static int _objectTypeCount; // EventSource Counter
 
         private static int _objectTypeCount; // EventSource Counter
         internal readonly int _objectID = System.Threading.Interlocked.Increment(ref _objectTypeCount);
@@ -25,8 +26,11 @@ namespace Microsoft.Data.SqlClient
         private SqlCommand _batchCommand;
         private List<SqlBatchCommand> _commandList;
 
+        private readonly int _objectID;
+
         internal SqlCommandSet()
         {
+            _objectID = System.Threading.Interlocked.Increment(ref _objectTypeCount);
             _batchCommand = new SqlCommand();
             _commandList = new List<SqlBatchCommand>();
         }

@@ -1,4 +1,4 @@
-﻿namespace System.Data.Common
+﻿namespace Microsoft.Data.SqlClient
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public partial class SqlBatchCommand
