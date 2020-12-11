@@ -14,7 +14,6 @@ namespace Microsoft.Data.SqlClient
 {
     /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/SqlException/*' />
     [Serializable]
-    [System.Runtime.CompilerServices.TypeForwardedFrom("System.Data, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
     public sealed partial class SqlException : System.Data.Common.DbException
     {
         private const string OriginalClientConnectionIdKey = "OriginalClientConnectionId";
@@ -89,7 +88,7 @@ namespace Microsoft.Data.SqlClient
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/Class/*' />
         public byte Class
         {
-            get { return Errors.Count > 0 ? this.Errors[0].Class : default; }
+            get { return Errors.Count > 0 ? Errors[0].Class : default; }
         }
 
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/LineNumber/*' />
@@ -125,7 +124,7 @@ namespace Microsoft.Data.SqlClient
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/Source/*' />
         override public string Source
         {
-            get { return Errors.Count > 0 ? Errors[0].Source : default; }
+            get { return TdsEnums.SQL_PROVIDER_NAME; }
         }
 
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlException.xml' path='docs/members[@name="SqlException"]/ToString/*' />
@@ -214,7 +213,7 @@ namespace Microsoft.Data.SqlClient
             }
             exception.Data.Add("HelpLink.EvtSrc", "MSSQLServer");
             exception.Data.Add("HelpLink.EvtID", errorCollection[0].Number.ToString(CultureInfo.InvariantCulture));
-            exception.Data.Add("HelpLink.BaseHelpUrl", "http://go.microsoft.com/fwlink");
+            exception.Data.Add("HelpLink.BaseHelpUrl", "https://go.microsoft.com/fwlink");
             exception.Data.Add("HelpLink.LinkId", "20476");
 
             return exception;

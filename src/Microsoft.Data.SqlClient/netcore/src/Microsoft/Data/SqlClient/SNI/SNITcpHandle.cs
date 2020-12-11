@@ -116,11 +116,16 @@ namespace Microsoft.Data.SqlClient.SNI
         /// <param name="timerExpire">Connection timer expiration</param>
         /// <param name="callbackObject">Callback object</param>
         /// <param name="parallel">Parallel executions</param>
-        public SNITCPHandle(string serverName, int port, long timerExpire, object callbackObject, bool parallel)
+        /// <param name="cachedFQDN">Key for DNS Cache</param>
+        /// <param name="pendingDNSInfo">Used for DNS Cache</param>
+        public SNITCPHandle(string serverName, int port, long timerExpire, object callbackObject, bool parallel, string cachedFQDN, ref SQLDNSInfo pendingDNSInfo)
         {
             _callbackObject = callbackObject;
             _targetServer = serverName;
             _sendSync = new object();
+
+            SQLDNSInfo cachedDNSInfo;
+            bool hasCachedDNSInfo = SQLFallbackDNSCache.Instance.GetDNSInfo(cachedFQDN, out cachedDNSInfo);
 
             try
             {
@@ -135,33 +140,71 @@ namespace Microsoft.Data.SqlClient.SNI
                     ts = ts.Ticks < 0 ? TimeSpan.FromTicks(0) : ts;
                 }
 
-                Task<Socket> connectTask;
-                if (parallel)
+                bool reportError = true;
+
+                // We will always first try to connect with serverName as before and let the DNS server to resolve the serverName.
+                // If the DSN resolution fails, we will try with IPs in the DNS cache if existed. We try with IPv4 first and followed by IPv6 if
+                // IPv4 fails. The exceptions will be throw to upper level and be handled as before.
+                try
                 {
-                    Task<IPAddress[]> serverAddrTask = Dns.GetHostAddressesAsync(serverName);
-                    serverAddrTask.Wait(ts);
-                    IPAddress[] serverAddresses = serverAddrTask.Result;
-
-                    if (serverAddresses.Length > MaxParallelIpAddresses)
+                    if (parallel)
                     {
-                        // Fail if above 64 to match legacy behavior
-                        ReportTcpSNIError(0, SNICommon.MultiSubnetFailoverWithMoreThan64IPs, string.Empty);
-                        return;
+                        _socket = TryConnectParallel(serverName, port, ts, isInfiniteTimeOut, ref reportError, cachedFQDN, ref pendingDNSInfo);
                     }
-
-                    connectTask = ParallelConnectAsync(serverAddresses, port);
-
-                    if (!(isInfiniteTimeOut ? connectTask.Wait(-1) : connectTask.Wait(ts)))
+                    else
                     {
-                        ReportTcpSNIError(0, SNICommon.ConnOpenFailedError, string.Empty);
-                        return;
+                        _socket = Connect(serverName, port, ts, isInfiniteTimeOut, cachedFQDN, ref pendingDNSInfo);
                     }
-
-                    _socket = connectTask.Result;
                 }
-                else
+                catch (Exception ex)
                 {
-                    _socket = Connect(serverName, port, ts, isInfiniteTimeOut);
+                    // Retry with cached IP address
+                    if (ex is SocketException || ex is ArgumentException || ex is AggregateException)
+                    {
+                        if (hasCachedDNSInfo == false)
+                        {
+                            throw;
+                        }
+                        else
+                        {
+                            int portRetry = String.IsNullOrEmpty(cachedDNSInfo.Port) ? port : Int32.Parse(cachedDNSInfo.Port);
+
+                            try
+                            {
+                                if (parallel)
+                                {
+                                    _socket = TryConnectParallel(cachedDNSInfo.AddrIPv4, portRetry, ts, isInfiniteTimeOut, ref reportError, cachedFQDN, ref pendingDNSInfo);
+                                }
+                                else
+                                {
+                                    _socket = Connect(cachedDNSInfo.AddrIPv4, portRetry, ts, isInfiniteTimeOut, cachedFQDN, ref pendingDNSInfo);
+                                }
+                            }
+                            catch (Exception exRetry)
+                            {
+                                if (exRetry is SocketException || exRetry is ArgumentNullException
+                                    || exRetry is ArgumentException || exRetry is ArgumentOutOfRangeException || exRetry is AggregateException)
+                                {
+                                    if (parallel)
+                                    {
+                                        _socket = TryConnectParallel(cachedDNSInfo.AddrIPv6, portRetry, ts, isInfiniteTimeOut, ref reportError, cachedFQDN, ref pendingDNSInfo);
+                                    }
+                                    else
+                                    {
+                                        _socket = Connect(cachedDNSInfo.AddrIPv6, portRetry, ts, isInfiniteTimeOut, cachedFQDN, ref pendingDNSInfo);
+                                    }
+                                }
+                                else
+                                {
+                                    throw;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
 
                 if (_socket == null || !_socket.Connected)
@@ -171,15 +214,19 @@ namespace Microsoft.Data.SqlClient.SNI
                         _socket.Dispose();
                         _socket = null;
                     }
-                    ReportTcpSNIError(0, SNICommon.ConnOpenFailedError, string.Empty);
+
+                    if (reportError)
+                    {
+                        ReportTcpSNIError(0, SNICommon.ConnOpenFailedError, string.Empty);
+                    }
                     return;
                 }
 
                 _socket.NoDelay = true;
-                _tcpStream = new NetworkStream(_socket, true);
+                _tcpStream = new SNINetworkStream(_socket, true);
 
                 _sslOverTdsStream = new SslOverTdsStream(_tcpStream);
-                _sslStream = new SslStream(_sslOverTdsStream, true, new RemoteCertificateValidationCallback(ValidateServerCertificate), null);
+                _sslStream = new SNISslStream(_sslOverTdsStream, true, new RemoteCertificateValidationCallback(ValidateServerCertificate));
             }
             catch (SocketException se)
             {
@@ -196,9 +243,70 @@ namespace Microsoft.Data.SqlClient.SNI
             _status = TdsEnums.SNI_SUCCESS;
         }
 
-        private static Socket Connect(string serverName, int port, TimeSpan timeout, bool isInfiniteTimeout)
+        // Connect to server with hostName and port in parellel mode.
+        // The IP information will be collected temporarily as the pendingDNSInfo but is not stored in the DNS cache at this point.
+        // Only write to the DNS cache when we receive IsSupported flag as true in the Feature Ext Ack from server.
+        private Socket TryConnectParallel(string hostName, int port, TimeSpan ts, bool isInfiniteTimeOut, ref bool callerReportError, string cachedFQDN, ref SQLDNSInfo pendingDNSInfo)
+        {
+            Socket availableSocket = null;
+            Task<Socket> connectTask;
+
+            Task<IPAddress[]> serverAddrTask = Dns.GetHostAddressesAsync(hostName);
+            serverAddrTask.Wait(ts);
+            IPAddress[] serverAddresses = serverAddrTask.Result;
+
+            if (serverAddresses.Length > MaxParallelIpAddresses)
+            {
+                // Fail if above 64 to match legacy behavior
+                callerReportError = false;
+                ReportTcpSNIError(0, SNICommon.MultiSubnetFailoverWithMoreThan64IPs, string.Empty);
+                return availableSocket;
+            }
+
+            string IPv4String = null;
+            string IPv6String = null;
+
+            foreach (IPAddress ipAddress in serverAddresses)
+            {
+                if (ipAddress.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    IPv4String = ipAddress.ToString();
+                }
+                else if (ipAddress.AddressFamily == AddressFamily.InterNetworkV6)
+                {
+                    IPv6String = ipAddress.ToString();
+                }
+            }
+
+            if (IPv4String != null || IPv6String != null)
+            {
+                pendingDNSInfo = new SQLDNSInfo(cachedFQDN, IPv4String, IPv6String, port.ToString());
+            }
+
+            connectTask = ParallelConnectAsync(serverAddresses, port);
+
+            if (!(isInfiniteTimeOut ? connectTask.Wait(-1) : connectTask.Wait(ts)))
+            {
+                callerReportError = false;
+                ReportTcpSNIError(0, SNICommon.ConnOpenFailedError, string.Empty);
+                return availableSocket;
+            }
+
+            availableSocket = connectTask.Result;
+            return availableSocket;
+
+        }
+
+        // Connect to server with hostName and port.
+        // The IP information will be collected temporarily as the pendingDNSInfo but is not stored in the DNS cache at this point.
+        // Only write to the DNS cache when we receive IsSupported flag as true in the Feature Ext Ack from server.
+        private static Socket Connect(string serverName, int port, TimeSpan timeout, bool isInfiniteTimeout, string cachedFQDN, ref SQLDNSInfo pendingDNSInfo)
         {
             IPAddress[] ipAddresses = Dns.GetHostAddresses(serverName);
+
+            string IPv4String = null;
+            string IPv6String = null;
+
             IPAddress serverIPv4 = null;
             IPAddress serverIPv6 = null;
             foreach (IPAddress ipAddress in ipAddresses)
@@ -206,17 +314,24 @@ namespace Microsoft.Data.SqlClient.SNI
                 if (ipAddress.AddressFamily == AddressFamily.InterNetwork)
                 {
                     serverIPv4 = ipAddress;
+                    IPv4String = ipAddress.ToString();
                 }
                 else if (ipAddress.AddressFamily == AddressFamily.InterNetworkV6)
                 {
                     serverIPv6 = ipAddress;
+                    IPv6String = ipAddress.ToString();
                 }
             }
             ipAddresses = new IPAddress[] { serverIPv4, serverIPv6 };
             Socket[] sockets = new Socket[2];
 
+            if (IPv4String != null || IPv6String != null)
+            {
+                pendingDNSInfo = new SQLDNSInfo(cachedFQDN, IPv4String, IPv6String, port.ToString());
+            }
+
             CancellationTokenSource cts = null;
-            
+
             void Cancel()
             {
                 for (int i = 0; i < sockets.Length; ++i)
@@ -240,7 +355,7 @@ namespace Microsoft.Data.SqlClient.SNI
             }
 
             Socket availableSocket = null;
-            try 
+            try
             {
                 for (int i = 0; i < sockets.Length; ++i)
                 {
@@ -451,45 +566,45 @@ namespace Microsoft.Data.SqlClient.SNI
         {
             bool releaseLock = false;
             try
-            {
-                // is the packet is marked out out-of-band (attention packets only) it must be
-                // sent immediately even if a send of recieve operation is already in progress
-                // because out of band packets are used to cancel ongoing operations
-                // so try to take the lock if possible but continue even if it can't be taken
-                if (packet.IsOutOfBand)
                 {
-                    Monitor.TryEnter(this, ref releaseLock);
-                }
-                else
-                {
-                    Monitor.Enter(this);
-                    releaseLock = true;
-                }
+                    // is the packet is marked out out-of-band (attention packets only) it must be
+                    // sent immediately even if a send of recieve operation is already in progress
+                    // because out of band packets are used to cancel ongoing operations
+                    // so try to take the lock if possible but continue even if it can't be taken
+                    if (packet.IsOutOfBand)
+                    {
+                        Monitor.TryEnter(this, ref releaseLock);
+                    }
+                    else
+                    {
+                        Monitor.Enter(this);
+                        releaseLock = true;
+                    }
 
-                // this lock ensures that two packets are not being written to the transport at the same time
-                // so that sending a standard and an out-of-band packet are both written atomically no data is 
-                // interleaved
-                lock (_sendSync)
-                {
-                    try
+                    // this lock ensures that two packets are not being written to the transport at the same time
+                    // so that sending a standard and an out-of-band packet are both written atomically no data is
+                    // interleaved
+                    lock (_sendSync)
                     {
-                        packet.WriteToStream(_stream);
-                        return TdsEnums.SNI_SUCCESS;
-                    }
-                    catch (ObjectDisposedException ode)
-                    {
-                        return ReportTcpSNIError(ode);
-                    }
-                    catch (SocketException se)
-                    {
-                        return ReportTcpSNIError(se);
-                    }
-                    catch (IOException ioe)
-                    {
-                        return ReportTcpSNIError(ioe);
+                        try
+                        {
+                            packet.WriteToStream(_stream);
+                            return TdsEnums.SNI_SUCCESS;
+                        }
+                        catch (ObjectDisposedException ode)
+                        {
+                            return ReportTcpSNIError(ode);
+                        }
+                        catch (SocketException se)
+                        {
+                            return ReportTcpSNIError(se);
+                        }
+                        catch (IOException ioe)
+                        {
+                            return ReportTcpSNIError(ioe);
+                        }
                     }
                 }
-            }
             finally
             {
                 if (releaseLock)
@@ -518,7 +633,8 @@ namespace Microsoft.Data.SqlClient.SNI
                         _socket.ReceiveTimeout = timeoutInMilliseconds;
                     }
                     else if (timeoutInMilliseconds == -1)
-                    {   // SqlCient internally represents infinite timeout by -1, and for TcpClient this is translated to a timeout of 0 
+                    {
+                        // SqlClient internally represents infinite timeout by -1, and for TcpClient this is translated to a timeout of 0
                         _socket.ReceiveTimeout = 0;
                     }
                     else
@@ -591,12 +707,17 @@ namespace Microsoft.Data.SqlClient.SNI
         /// <returns>SNI error code</returns>
         public override uint SendAsync(SNIPacket packet, SNIAsyncCallback callback = null)
         {
-            SNIAsyncCallback cb = callback ?? _sendCallback;
-            lock (this)
+            long scopeID = SqlClientEventSource.Log.TrySNIScopeEnterEvent("<sc.SNI.SNIMarsHandle.SendAsync |SNI|INFO|SCOPE>");
+            try
             {
+                SNIAsyncCallback cb = callback ?? _sendCallback;
                 packet.WriteToStreamAsync(_stream, cb, SNIProviders.TCP_PROV);
+                return TdsEnums.SNI_SUCCESS_IO_PENDING;
             }
-            return TdsEnums.SNI_SUCCESS_IO_PENDING;
+            finally
+            {
+                SqlClientEventSource.Log.TrySNIScopeLeaveEvent(scopeID);
+            }
         }
 
         /// <summary>
@@ -630,15 +751,15 @@ namespace Microsoft.Data.SqlClient.SNI
         {
             try
             {
-                // _socket.Poll method with argument SelectMode.SelectRead returns 
+                // _socket.Poll method with argument SelectMode.SelectRead returns
                 //      True : if Listen has been called and a connection is pending, or
                 //      True : if data is available for reading, or
                 //      True : if the connection has been closed, reset, or terminated, i.e no active connection.
                 //      False : otherwise.
                 // _socket.Available property returns the number of bytes of data available to read.
                 //
-                // Since _socket.Connected alone doesn't guarantee if the connection is still active, we use it in 
-                // combination with _socket.Poll method and _socket.Available == 0 check. When both of them 
+                // Since _socket.Connected alone doesn't guarantee if the connection is still active, we use it in
+                // combination with _socket.Poll method and _socket.Available == 0 check. When both of them
                 // return true we can safely determine that the connection is no longer active.
                 if (!_socket.Connected || (_socket.Poll(100, SelectMode.SelectRead) && _socket.Available == 0))
                 {
@@ -700,7 +821,7 @@ namespace Microsoft.Data.SqlClient.SNI
         internal static void SetKeepAliveValues(ref Socket socket)
         {
 
-#if NETCORE3
+#if NETCOREAPP31_AND_ABOVE
             socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 1);
             socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 30);

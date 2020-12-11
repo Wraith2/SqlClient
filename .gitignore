@@ -38,6 +38,7 @@ bld/
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
+**/.AssemblyAttributes
 
 # Visual Studio Code settings
 .vscode/
@@ -359,4 +360,4 @@ MigrationBackup/
 .nuget/
 
 # Config Json file
-src/Microsoft.Data.SqlClient/tests/ManualTests/config.json
+**/config.json
