@@ -14,26 +14,15 @@ namespace Microsoft.Data.SqlClient.SNI
     /// </summary>
     internal class SNIMarsConnection
     {
-        private readonly Guid _connectionId = Guid.NewGuid();
-        private readonly Dictionary<int, SNIMarsHandle> _sessions = new Dictionary<int, SNIMarsHandle>();
-        private readonly byte[] _headerBytes = new byte[SNISMUXHeader.HEADER_LENGTH];
-        private readonly SNISMUXHeader _currentHeader = new SNISMUXHeader();
+        private readonly Guid _connectionId;
+        private readonly Dictionary<int, SNIMarsHandle> _sessions;
         private SNIHandle _lowerHandle;
-        private ushort _nextSessionId = 0;
-        private int _currentHeaderByteCount = 0;
-        private int _dataBytesLeft = 0;
-        private SNIPacket _currentPacket;
+        private ushort _nextSessionId;
 
         /// <summary>
         /// Connection ID
         /// </summary>
-        public Guid ConnectionId
-        {
-            get
-            {
-                return _connectionId;
-            }
-        }
+        public Guid ConnectionId => _connectionId;
 
         public int ProtocolVersion => _lowerHandle.ProtocolVersion;
 
@@ -43,6 +32,13 @@ namespace Microsoft.Data.SqlClient.SNI
         /// <param name="lowerHandle">Lower handle</param>
         public SNIMarsConnection(SNIHandle lowerHandle)
         {
+            _connectionId = Guid.NewGuid();
+            _sessions = new Dictionary<int, SNIMarsHandle>();
+            _state = State.Header;
+            _headerCount = 0;
+            _headerBytes = new byte[SNISMUXHeader.HEADER_LENGTH];
+            _header = new SNISMUXHeader();
+            _nextSessionId = 0;
             _lowerHandle = lowerHandle;
             _lowerHandle.SetAsyncCallbacks(HandleReceiveComplete, HandleSendComplete);
         }
@@ -75,7 +71,7 @@ namespace Microsoft.Data.SqlClient.SNI
                     return TdsEnums.SNI_SUCCESS_IO_PENDING;
                 }
                 SqlClientEventSource.Log.TrySNITraceEvent("<sc.SNI.SNIMarsConnection.StartReceive |SNI|ERR> Connection not useable.");
-                return SNICommon.ReportSNIError(SNIProviders.SMUX_PROV, 0, SNICommon.ConnNotUsableError, Strings.SNI_ERROR_19);
+                return SNICommon.ReportSNIError(SNIProviders.SMUX_PROV, 0, SNICommon.ConnNotUsableError, string.Empty);
             }
             finally
             {
@@ -205,157 +201,6 @@ namespace Microsoft.Data.SqlClient.SNI
         }
 
         /// <summary>
-        /// Process a receive completion
-        /// </summary>
-        /// <param name="packet">SNI packet</param>
-        /// <param name="sniErrorCode">SNI error code</param>
-        public void HandleReceiveComplete(SNIPacket packet, uint sniErrorCode)
-        {
-            long scopeID = SqlClientEventSource.Log.TrySNIScopeEnterEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|INFO|SCOPE>");
-            try
-            {
-                SNISMUXHeader currentHeader = null;
-                SNIPacket currentPacket = null;
-                SNIMarsHandle currentSession = null;
-
-                if (sniErrorCode != TdsEnums.SNI_SUCCESS)
-                {
-                    lock (this)
-                    {
-                        HandleReceiveError(packet);
-                        SqlClientEventSource.Log.TrySNITraceEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|ERR> not successful.");
-                        return;
-                    }
-                }
-
-                while (true)
-                {
-                    lock (this)
-                    {
-                        if (_currentHeaderByteCount != SNISMUXHeader.HEADER_LENGTH)
-                        {
-                            currentHeader = null;
-                            currentPacket = null;
-                            currentSession = null;
-
-                            while (_currentHeaderByteCount != SNISMUXHeader.HEADER_LENGTH)
-                            {
-                                int bytesTaken = packet.TakeData(_headerBytes, _currentHeaderByteCount, SNISMUXHeader.HEADER_LENGTH - _currentHeaderByteCount);
-                                _currentHeaderByteCount += bytesTaken;
-
-                                if (bytesTaken == 0)
-                                {
-                                    sniErrorCode = ReceiveAsync(ref packet);
-
-                                    if (sniErrorCode == TdsEnums.SNI_SUCCESS_IO_PENDING)
-                                    {
-                                        SqlClientEventSource.Log.TrySNITraceEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|ERR> not successful.");
-                                        return;
-                                    }
-
-                                    HandleReceiveError(packet);
-                                    return;
-                                }
-                            }
-
-                            _currentHeader.Read(_headerBytes);
-
-                            _dataBytesLeft = (int)_currentHeader.length;
-                            _currentPacket = _lowerHandle.RentPacket(headerSize: 0, dataSize: (int)_currentHeader.length);
-                        }
-
-                        currentHeader = _currentHeader;
-                        currentPacket = _currentPacket;
-
-                        if (_currentHeader.flags == (byte)SNISMUXFlags.SMUX_DATA)
-                        {
-                            if (_dataBytesLeft > 0)
-                            {
-                                int length = packet.TakeData(_currentPacket, _dataBytesLeft);
-                                _dataBytesLeft -= length;
-
-                                if (_dataBytesLeft > 0)
-                                {
-                                    sniErrorCode = ReceiveAsync(ref packet);
-
-                                    if (sniErrorCode == TdsEnums.SNI_SUCCESS_IO_PENDING)
-                                    {
-                                        return;
-                                    }
-
-                                    HandleReceiveError(packet);
-                                    return;
-                                }
-                            }
-                        }
-
-                        _currentHeaderByteCount = 0;
-
-                        if (!_sessions.ContainsKey(_currentHeader.sessionId))
-                        {
-                            SNILoadHandle.SingletonInstance.LastError = new SNIError(SNIProviders.SMUX_PROV, 0, SNICommon.InvalidParameterError, Strings.SNI_ERROR_5);
-                            HandleReceiveError(packet);
-                            _lowerHandle.Dispose();
-                            _lowerHandle = null;
-                            return;
-                        }
-
-                        if (_currentHeader.flags == (byte)SNISMUXFlags.SMUX_FIN)
-                        {
-                            _sessions.Remove(_currentHeader.sessionId);
-                        }
-                        else
-                        {
-                            currentSession = _sessions[_currentHeader.sessionId];
-                        }
-                    }
-
-                    if (currentHeader.flags == (byte)SNISMUXFlags.SMUX_DATA)
-                    {
-                        currentSession.HandleReceiveComplete(currentPacket, currentHeader);
-                    }
-
-                    if (_currentHeader.flags == (byte)SNISMUXFlags.SMUX_ACK)
-                    {
-                        try
-                        {
-                            currentSession.HandleAck(currentHeader.highwater);
-                        }
-                        catch (Exception e)
-                        {
-                            SNICommon.ReportSNIError(SNIProviders.SMUX_PROV, SNICommon.InternalExceptionError, e);
-                        }
-
-                        Debug.Assert(_currentPacket == currentPacket, "current and _current are not the same");
-                        ReturnPacket(currentPacket);
-                        currentPacket = null;
-                        _currentPacket = null;
-                    }
-
-                    lock (this)
-                    {
-                        if (packet.DataLeft == 0)
-                        {
-                            sniErrorCode = ReceiveAsync(ref packet);
-
-                            if (sniErrorCode == TdsEnums.SNI_SUCCESS_IO_PENDING)
-                            {
-                                return;
-                            }
-
-                            HandleReceiveError(packet);
-                            return;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                SqlClientEventSource.Log.TrySNIScopeLeaveEvent(scopeID);
-            }
-        }
-
-        /// <summary>
         /// Enable SSL
         /// </summary>
         public uint EnableSsl(uint options)
@@ -394,7 +239,15 @@ namespace Microsoft.Data.SqlClient.SNI
 
         public void ReturnPacket(SNIPacket packet)
         {
-            _lowerHandle.ReturnPacket(packet);
+            SNIHandle handle = _lowerHandle;
+            if (handle != null)
+            {
+                handle.ReturnPacket(packet);
+            }
+            else
+            {
+                packet.Release();
+            }
         }
 
 #if DEBUG
@@ -414,5 +267,200 @@ namespace Microsoft.Data.SqlClient.SNI
             }
         }
 #endif
+
+        private enum State : uint
+        {
+            Header = 1,
+            Payload = 2,
+            Dispatch = 3
+        }
+
+        private enum LoopState : uint
+        {
+            Run,
+            Recieve,
+            Finish,
+            Error
+        }
+
+
+        // the following variables are used only inside HandleRecieveComplete
+        // all access to these variables must be performed under lock(this) because
+        // RecieveAsync can immediately return a new packet causing overlapping
+        // behaviour without the lock.
+        private State _state;
+
+        private byte[] _headerBytes;
+        private int _headerCount;
+        private SNISMUXHeader _header;
+
+        private int _payloadLength;
+        private int _payloadCount;
+        private SNIPacket _partial;
+
+        public void HandleReceiveComplete(SNIPacket packet, uint sniErrorCode)
+        {
+            long scopeID = SqlClientEventSource.Log.TrySNIScopeEnterEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|INFO|SCOPE>");
+            try
+            {
+                if (sniErrorCode != TdsEnums.SNI_SUCCESS)
+                {
+                    lock (this)
+                    {
+                        HandleReceiveError(packet);
+                        SqlClientEventSource.Log.TrySNITraceEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|ERR> not successful.");
+                        return;
+                    }
+                }
+
+                LoopState loopState = LoopState.Run;
+                lock (this)
+                {
+                    while (loopState == LoopState.Run)
+                    {
+                        switch (_state)
+                        {
+                            case State.Header:
+                                int taken = packet.TakeData(_headerBytes, _headerCount, SNISMUXHeader.HEADER_LENGTH - _headerCount);
+                                _headerCount += taken;
+                                if (_headerCount == SNISMUXHeader.HEADER_LENGTH)
+                                {
+                                    _header.Read(_headerBytes);
+                                    _payloadLength = (int)_header.length;
+                                    _payloadCount = 0;
+                                    _partial = RentPacket(headerSize: 0, dataSize: _payloadLength);
+                                    _state = State.Payload;
+                                    goto case State.Payload;
+                                }
+                                else
+                                {
+                                    loopState = LoopState.Recieve;
+                                }
+                                break;
+
+                            case State.Payload:
+                                if (packet.DataLeft == _payloadLength && _partial == null)
+                                {
+                                    // if the data in the packet being processed is exactly and only the data that is going to sent
+                                    // on to the parser then don't copy it to a new packet just forward the current packet once we've
+                                    // fiddled the data pointer so that it skips the header data when
+                                    _partial = packet;
+                                    packet = null;
+                                    _partial.SetDataToRemainingContents();
+                                    _state = State.Dispatch;
+                                    goto case State.Dispatch;
+                                }
+                                else
+                                {
+                                    int wanted = _payloadLength - _payloadCount;
+                                    int transferred = SNIPacket.TransferData(packet, _partial, wanted);
+                                    _payloadCount += transferred;
+                                    if (_payloadCount == _payloadLength)
+                                    {
+                                        // payload is complete so dispatch the current packet
+                                        _state = State.Dispatch;
+                                        goto case State.Dispatch;
+                                    }
+                                    else if (packet.DataLeft == 0)
+                                    {
+                                        // no more data in this packet so wait for a new one
+                                        loopState = LoopState.Recieve;
+                                    }
+                                    else
+                                    {
+                                        // start the loop again and decode the next packet in the input
+                                        _headerCount = 0;
+                                        _state = State.Header;
+                                    }
+                                }
+
+                                break;
+
+                            case State.Dispatch:
+                                if (_sessions.TryGetValue(_header.sessionId, out SNIMarsHandle session))
+                                {
+                                    switch ((SNISMUXFlags)_header.flags)
+                                    {
+                                        case SNISMUXFlags.SMUX_DATA:
+                                            session.HandleReceiveComplete(_partial, _header);
+                                            // do not return the _partial packet, the receiver is responsible for returning the 
+                                            // packet once it has been used because it can take sync and async paths from here
+                                            _partial = null;
+                                            break;
+
+                                        case SNISMUXFlags.SMUX_ACK:
+                                            ReturnPacket(_partial);
+                                            _partial = null;
+                                            try
+                                            {
+                                                session.HandleAck(_header.highwater);
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                SNICommon.ReportSNIError(SNIProviders.SMUX_PROV, SNICommon.InternalExceptionError, e);
+                                            }
+                                            break;
+
+                                        case SNISMUXFlags.SMUX_FIN:
+                                            ReturnPacket(_partial);
+                                            _partial = null;
+                                            _sessions.Remove(_header.sessionId);
+                                            break;
+
+                                        default:
+                                            Debug.Fail("unknown smux packet flag");
+                                            break;
+                                    }
+
+                                    // a packet has been dispatched so change to header state eeady to decode another
+                                    _headerCount = 0;
+                                    _state = State.Header;
+
+                                    if (packet == null || packet.DataLeft == 0)
+                                    {
+                                        // no more data in this packet or the packet has been forwarded so exit 
+                                        // the loop and wait for a new packet to be recieved
+                                        loopState = LoopState.Recieve;
+                                    }
+                                }
+                                else
+                                {
+                                    SNILoadHandle.SingletonInstance.LastError = new SNIError(SNIProviders.SMUX_PROV, 0, SNICommon.InvalidParameterError, string.Empty);
+                                    HandleReceiveError(packet);
+                                    packet = null;
+                                    _lowerHandle.Dispose();
+                                    _lowerHandle = null;
+                                    loopState = LoopState.Error;
+                                }
+                                break;
+                        }
+                    }
+                }
+
+                if (loopState == LoopState.Recieve)
+                {
+                    if (packet != null)
+                    {
+                        Debug.Assert(packet.DataLeft == 0, "loop exit with data remaining");
+                        ReturnPacket(packet);
+                        packet = null;
+                    }
+
+                    if (ReceiveAsync(ref packet) == TdsEnums.SNI_SUCCESS_IO_PENDING)
+                    {
+                        SqlClientEventSource.Log.TrySNITraceEvent("<sc.SNI.SNIMarsConnection.HandleReceiveComplete |SNI|ERR> not successful.");
+                        packet = null;
+                    }
+                    else
+                    {
+                        HandleReceiveError(packet);
+                    }
+                }
+            }
+            finally
+            {
+                SqlClientEventSource.Log.TrySNIScopeLeaveEvent(scopeID);
+            }
+        }
     }
 }

@@ -136,7 +136,7 @@ namespace Microsoft.Data.SqlClient.SNI
         {
             Debug.Assert(packet.ReservedHeaderSize == SNISMUXHeader.HEADER_LENGTH, "mars handle attempting to mux packet without mux reservation");
 
-            SetupSMUXHeader(packet.Length, SNISMUXFlags.SMUX_DATA);
+            SetupSMUXHeader(packet.DataLength, SNISMUXFlags.SMUX_DATA);
             _currentHeader.Write(packet.GetHeaderBuffer(SNISMUXHeader.HEADER_LENGTH));
             packet.SetHeaderActive();
 
@@ -530,7 +530,7 @@ namespace Microsoft.Data.SqlClient.SNI
 
                     if (!_packetEvent.Wait(timeoutInMilliseconds))
                     {
-                        SNILoadHandle.SingletonInstance.LastError = new SNIError(SNIProviders.SMUX_PROV, 0, SNICommon.ConnTimeoutError, Strings.SNI_ERROR_11);
+                        SNILoadHandle.SingletonInstance.LastError = new SNIError(SNIProviders.SMUX_PROV, 0, SNICommon.ConnTimeoutError, string.Empty);
                         return TdsEnums.SNI_WAIT_TIMEOUT;
                     }
                 }

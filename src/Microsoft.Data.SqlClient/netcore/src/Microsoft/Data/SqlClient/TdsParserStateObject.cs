@@ -2353,7 +2353,6 @@ namespace Microsoft.Data.SqlClient
 
         internal void ReadSni(TaskCompletionSource<object> completion)
         {
-
             Debug.Assert(_networkPacketTaskSource == null || ((_asyncReadWithoutSnapshot) && (_networkPacketTaskSource.Task.IsCompleted)), "Pending async call or failed to replay snapshot when calling ReadSni");
             _networkPacketTaskSource = completion;
 
@@ -2373,8 +2372,6 @@ namespace Microsoft.Data.SqlClient
                 _realNetworkPacketTaskSource = new TaskCompletionSource<object>();
             }
 #endif
-
-
             PacketHandle readPacket = default;
 
             uint error = 0;
@@ -2424,10 +2421,16 @@ namespace Microsoft.Data.SqlClient
                 }
 
                 if (TdsEnums.SNI_SUCCESS == error)
-                { // Success - process results!
+                { 
+                    // Success - process results!
                     Debug.Assert(IsValidPacket(readPacket), "ReadNetworkPacket should not have been null on this async operation!");
                     // Evaluate this condition for MANAGED_SNI. This may not be needed because the network call is happening Async and only the callback can receive a success.
                     ReadAsyncCallback(IntPtr.Zero, readPacket, 0);
+
+                    if (!IsPacketEmpty(readPacket))
+                    {
+                        ReleasePacket(readPacket);
+                    }
                 }
                 else if (TdsEnums.SNI_SUCCESS_IO_PENDING != error)
                 { // FAILURE!
