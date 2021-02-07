@@ -2133,48 +2133,4 @@ namespace Microsoft.Data.SqlClient
         }
     }
 
-    /// <summary>
-    /// This class implements a FIFO Queue with SemaphoreSlim for ordered execution of parallel tasks.
-    /// Currently used in Managed SNI (SNISslStream) to override SslStream's WriteAsync implementation.
-    /// </summary>
-    internal class ConcurrentQueueSemaphore
-    {
-        private static readonly Action<Task, object> s_continuePop = ContinuePop;
-
-        private readonly SemaphoreSlim _semaphore;
-        private readonly ConcurrentQueue<TaskCompletionSource<bool>> _queue =
-            new ConcurrentQueue<TaskCompletionSource<bool>>();
-
-        public ConcurrentQueueSemaphore(int initialCount)
-        {
-            _semaphore = new SemaphoreSlim(initialCount);
-        }
-
-        public Task WaitAsync(CancellationToken cancellationToken)
-        {
-            var tcs = new TaskCompletionSource<bool>();
-            _queue.Enqueue(tcs);
-            _semaphore.WaitAsync().ContinueWith(
-                continuationAction: s_continuePop,
-                state: _queue,
-                cancellationToken: cancellationToken
-            );
-            return tcs.Task;
-        }
-
-        public void Release()
-        {
-            _semaphore.Release();
-        }
-
-        private static void ContinuePop(Task task, object state)
-        {
-            ConcurrentQueue<TaskCompletionSource<bool>> queue = (ConcurrentQueue<TaskCompletionSource<bool>>)state;
-            if (queue.TryDequeue(out TaskCompletionSource<bool> popped))
-            {
-                popped.SetResult(true);
-            }
-        }
-    }
-
-}//namespace
+}
