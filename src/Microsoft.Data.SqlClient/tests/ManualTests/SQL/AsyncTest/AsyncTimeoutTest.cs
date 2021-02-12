@@ -97,7 +97,7 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
                 switch (commonObj)
                 {
                     case "Connection":
-                        QueryAndValidate(api, 1, delayQuery2s, 1, true, true, sqlConnection).Wait(); // Waith's PR
+                        QueryAndValidate(api, 1, delayQuery2s, 1, true, true, sqlConnection).Wait();
                         QueryAndValidate(api, 2, delayQuery2s, 5, false, true, sqlConnection).Wait();
                         QueryAndValidate(api, 3, delayQuery10s, 1, true, true, sqlConnection).Wait();
                         QueryAndValidate(api, 4, delayQuery2s, 10, false, true, sqlConnection).Wait();
