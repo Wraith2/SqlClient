@@ -25,7 +25,7 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
             ExecuteXmlReaderAsync
         }
 
-        [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringSetupForAE)]
+        [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
         [ClassData(typeof(AsyncTimeoutTestVariations))]
         public static void TestDelayedAsyncTimeout(AsyncAPI api, string commonObj, int delayPeriod, bool marsEnabled) =>
             RunTest(api, commonObj, delayPeriod, marsEnabled);
