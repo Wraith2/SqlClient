@@ -105,7 +105,7 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
                     case "Command":
                         using (SqlCommand cmd = sqlConnection.CreateCommand())
                         {
-                            QueryAndValidate(api, 1, delayQuery2s, 1, true, false, sqlConnection, cmd).Wait(); // Waith's PR
+                            QueryAndValidate(api, 1, delayQuery2s, 1, true, false, sqlConnection, cmd).Wait();
                             QueryAndValidate(api, 2, delayQuery2s, 5, false, false, sqlConnection, cmd).Wait();
                             QueryAndValidate(api, 3, delayQuery10s, 1, true, false, sqlConnection, cmd).Wait();
                             QueryAndValidate(api, 4, delayQuery2s, 10, false, false, sqlConnection, cmd).Wait();
