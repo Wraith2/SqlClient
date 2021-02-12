@@ -3563,43 +3563,40 @@ namespace Microsoft.Data.SqlClient
                     // Set _attentionSending to true before sending attention and reset after setting _attentionSent
                     // This prevents a race condition between receiving the attention ACK and setting _attentionSent
                     _attentionSending = true;
-
 #if DEBUG
                     if (!_skipSendAttention)
-                    {
 #endif
-                    // Take lock and send attention
-                    bool releaseLock = false;
-                    if ((mustTakeWriteLock) && (!_parser.Connection.ThreadHasParserLockForClose))
                     {
-                        releaseLock = true;
-                        _parser.Connection._parserLock.Wait(canReleaseFromAnyThread: false);
-                        _parser.Connection.ThreadHasParserLockForClose = true;
-                    }
-                    try
-                    {
-                        // Check again (just in case the connection was closed while we were waiting)
-                        if (_parser.State == TdsParserState.Closed || _parser.State == TdsParserState.Broken)
+                        // Take lock and send attention
+                        bool releaseLock = false;
+                        if ((mustTakeWriteLock) && (!_parser.Connection.ThreadHasParserLockForClose))
                         {
-                            return;
+                            releaseLock = true;
+                            _parser.Connection._parserLock.Wait(canReleaseFromAnyThread: false);
+                            _parser.Connection.ThreadHasParserLockForClose = true;
                         }
+                        try
+                        {
+                            // Check again (just in case the connection was closed while we were waiting)
+                            if (_parser.State == TdsParserState.Closed || _parser.State == TdsParserState.Broken)
+                            {
+                                return;
+                            }
 
-                        uint sniError;
-                        _parser._asyncWrite = false; // stop async write 
-                        SNIWritePacket(attnPacket, out sniError, canAccumulate: false, callerHasConnectionLock: false);
-                        SqlClientEventSource.Log.TryTraceEvent("<sc.TdsParser.SendAttention|INFO> Send Attention ASync.");
-                    }
-                    finally
-                    {
-                        if (releaseLock)
+                            uint sniError;
+                            _parser._asyncWrite = false; // stop async write 
+                            SNIWritePacket(attnPacket, out sniError, canAccumulate: false, callerHasConnectionLock: false);
+                            SqlClientEventSource.Log.TryTraceEvent("<sc.TdsParser.SendAttention|INFO> Send Attention ASync.");
+                        }
+                        finally
                         {
-                            _parser.Connection.ThreadHasParserLockForClose = false;
-                            _parser.Connection._parserLock.Release();
+                            if (releaseLock)
+                            {
+                                _parser.Connection.ThreadHasParserLockForClose = false;
+                                _parser.Connection._parserLock.Release();
+                            }
                         }
                     }
-#if DEBUG
-                    }
-#endif
 
                     SetTimeoutSeconds(AttentionTimeoutSeconds); // Initialize new attention timeout of 5 seconds.
                     _attentionSent = true;
