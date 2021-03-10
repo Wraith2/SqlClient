@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Config Json file
 **/config.json
+/src/Microsoft.Data.SqlClient/netcore/DataAccessPerformance
+/src/Microsoft.Data.SqlClient/netcore/sql-batch-insert-performance-main
+/src/Microsoft.Data.SqlClient/netcore/ConsoleApp1
