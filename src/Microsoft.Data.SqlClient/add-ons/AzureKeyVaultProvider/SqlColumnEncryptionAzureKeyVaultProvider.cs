@@ -213,7 +213,7 @@ namespace Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider
         /// </summary>
         /// <param name="masterKeyPath">Complete path of an asymmetric key in Azure Key Vault</param>
         /// <param name="encryptionAlgorithm">Asymmetric Key Encryption Algorithm</param>
-        /// <param name="columnEncryptionKey">Plain text column encryption key</param>
+        /// <param name="columnEncryptionKey">The plaintext column encryption key.</param>
         /// <returns>Encrypted column encryption key</returns>
         public override byte[] EncryptColumnEncryptionKey(string masterKeyPath, string encryptionAlgorithm, byte[] columnEncryptionKey)
         {
@@ -273,7 +273,7 @@ namespace Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider
             // throw appropriate error if masterKeyPath is null or empty
             if (string.IsNullOrWhiteSpace(masterKeyPath))
             {
-                ADP.InvalidAKVPath(masterKeyPath, isSystemOp);
+                throw ADP.InvalidAKVPath(masterKeyPath, isSystemOp);
             }
 
             if (!Uri.TryCreate(masterKeyPath, UriKind.Absolute, out Uri parsedUri) || parsedUri.Segments.Length < 3)
