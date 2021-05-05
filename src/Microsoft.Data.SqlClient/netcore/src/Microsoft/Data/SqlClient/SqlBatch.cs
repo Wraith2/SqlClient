@@ -14,7 +14,6 @@ namespace Microsoft.Data.SqlClient
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public class SqlBatch : DbBatch
-
     {
         private SqlCommand _batchCommand;
         private List<SqlBatchCommand> _commands;
@@ -125,14 +124,19 @@ namespace Microsoft.Data.SqlClient
         {
             CheckDisposed();
             SetupBatchCommandExecute();
-            return _batchCommand.ExecuteReaderAsync(cancellationToken).ContinueWith<DbDataReader>((result) =>
-            {
-                if (result.IsFaulted)
+            return _batchCommand.ExecuteReaderAsync(cancellationToken).ContinueWith<DbDataReader>(
+                static (Task<SqlDataReader> result) =>
                 {
-                    throw result.Exception.InnerException;
-                }
-                return result.Result;
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.NotOnCanceled, TaskScheduler.Default);
+                    if (result.IsFaulted)
+                    {
+                        throw result.Exception.InnerException;
+                    }
+                    return result.Result;
+                }, 
+                CancellationToken.None, 
+                TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.NotOnCanceled, 
+                TaskScheduler.Default
+            );
         }
 
         protected override void Dispose(bool disposing)

@@ -52,29 +52,28 @@ namespace Microsoft.Data.SqlClient
             return new SqlParameter();
         }
 
+    }
+
+    public sealed partial class SqlClientFactory : DbProviderFactory
+    {
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CanCreateBatch/*'/>
         public
-#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0 && !NETSTANDARD2_1
         override 
 #endif
         bool CanCreateBatch => true;
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CreateBatch/*'/>
         public
-#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0 && !NETSTANDARD2_1
         override 
 #endif 
-        DbBatch CreateBatch()
-        {
-            return new SqlBatch();
-        }
+        DbBatch CreateBatch() => new SqlBatch();
+
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlClientFactory.xml' path='docs/members[@name="SqlClientFactory"]/CreateBatchCommand/*'/>
         public
-#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0
+#if !NETCOREAPP2_1 && !NETCOREAPP3_1 && !NETSTANDARD2_0 && !NETSTANDARD2_1
         override 
 # endif
-        DbBatchCommand CreateBatchCommand()
-        {
-            return new SqlBatchCommand();
-        }
+        DbBatchCommand CreateBatchCommand() => new SqlBatchCommand();
     }
 }

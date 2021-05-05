@@ -389,7 +389,7 @@
   <ItemGroup Condition="'$(OSGroup)' != 'AnyOS' AND '$(TargetFramework)' != 'netstandard2.0' AND '$(BuildSimulator)' == 'true'">
     <Compile Include="Microsoft\Data\SqlClient\SimulatorEnclaveProvider.NetCoreApp.cs" />
   </ItemGroup>
-  <ItemGroup Condition="'$(OSGroup)' != 'AnyOS' AND ('$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'netcoreapp2.1' or '$(TargetFramework)' == 'netcoreapp3.1' )">
+  <ItemGroup Condition="'$(OSGroup)' != 'AnyOS' AND ('$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'netstandard2.1' or '$(TargetFramework)' == 'netcoreapp2.1' or '$(TargetFramework)' == 'netcoreapp3.1' )">
     <Compile Include="Common\Data\Common\DbBatch.cs" />
     <Compile Include="Common\Data\Common\DbBatchCommand.cs" />
   </ItemGroup>
