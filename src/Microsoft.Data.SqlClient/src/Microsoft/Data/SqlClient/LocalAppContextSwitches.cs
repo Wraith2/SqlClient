@@ -16,11 +16,14 @@ namespace Microsoft.Data.SqlClient
         internal const string UseSystemDefaultSecureProtocolsString = @"Switch.Microsoft.Data.SqlClient.UseSystemDefaultSecureProtocols";
         // safety switch
         internal const string EnableRetryLogicSwitch = "Switch.Microsoft.Data.SqlClient.EnableRetryLogic";
+        internal const string UseExperimentalMARSThreadingString = @"Switch.Microsoft.Data.SqlClient.UseExperimentalMARSThreading";
+
 
         private static bool _makeReadAsyncBlocking;
         private static bool? s_LegacyRowVersionNullBehavior;
         private static bool? s_UseSystemDefaultSecureProtocols;
-        private static bool? s_isRetryEnabled = null;
+        private static bool? s_isRetryEnabled;
+        private static bool? s_useExperimentalMARSThreading;
 
 #if !NETFRAMEWORK
         static LocalAppContextSwitches()
@@ -94,6 +97,22 @@ namespace Microsoft.Data.SqlClient
                     s_UseSystemDefaultSecureProtocols = result;
                 }
                 return s_UseSystemDefaultSecureProtocols.Value;
+            }
+        }
+
+
+
+        public static bool UseExperimentalMARSThreading
+        {
+            get
+            {
+                if (s_useExperimentalMARSThreading is null)
+                {
+                    bool result;
+                    result = AppContext.TryGetSwitch(UseExperimentalMARSThreadingString, out result) ? result : false;
+                    s_useExperimentalMARSThreading = result;
+                }
+                return s_useExperimentalMARSThreading.Value;
             }
         }
     }

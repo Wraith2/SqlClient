@@ -139,6 +139,10 @@ namespace Microsoft.Data.SqlClient.SNI
             SNIHandle sessionHandle = _sessionHandle;
 
             _sessionHandle = null;
+            if (_marsConnection != null)
+            {
+                _marsConnection.Dispose();
+            }
             _marsConnection = null;
 
             DisposeCounters();

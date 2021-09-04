@@ -55,7 +55,6 @@ namespace Microsoft.Data.SqlClient.SNI
         public override void Dispose()
         {
             // SendControlPacket will lock so make sure that it cannot deadlock by failing to enter the DemuxerLock
-            Debug.Assert(_connection != null && Monitor.IsEntered(_connection.DemuxerSync), "SNIMarsHandle.HandleRecieveComplete should be called while holding the SNIMarsConnection.DemuxerSync because it can cause deadlocks");
             using (TrySNIEventScope.Create(nameof(SNIMarsHandle)))
             {
                 try
@@ -390,7 +389,6 @@ namespace Microsoft.Data.SqlClient.SNI
         /// <param name="highwater">Send highwater mark</param>
         public void HandleAck(uint highwater)
         {
-            Debug.Assert(_connection != null && Monitor.IsEntered(_connection.DemuxerSync), "SNIMarsHandle.HandleRecieveComplete should be called while holding the SNIMarsConnection.DemuxerSync because it can cause deadlocks");
             using (TrySNIEventScope.Create(nameof(SNIMarsHandle)))
             {
                 lock (this)
@@ -412,7 +410,6 @@ namespace Microsoft.Data.SqlClient.SNI
         /// <param name="header">SMUX header</param>
         public void HandleReceiveComplete(SNIPacket packet, SNISMUXHeader header)
         {
-            Debug.Assert(_connection != null && Monitor.IsEntered(_connection.DemuxerSync), "SNIMarsHandle.HandleRecieveComplete should be called while holding the SNIMarsConnection.DemuxerSync because it can cause deadlocks");
             using (TrySNIEventScope.Create(nameof(SNIMarsHandle)))
             {
                 lock (this)
