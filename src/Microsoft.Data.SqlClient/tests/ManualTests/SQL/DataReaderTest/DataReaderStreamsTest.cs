@@ -15,9 +15,6 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
 {
     public static class DataReaderStreamsTest
     {
-        //[ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
-        //public static void 
-
         [ConditionalTheory(typeof(DataTestUtility), nameof(DataTestUtility.AreConnStringsSetup))]
         [MemberData(nameof(GetCommandBehavioursAndIsAsync))]
         public static async Task GetFieldValueAsync_OfStream(CommandBehavior behavior, bool isExecuteAsync)
