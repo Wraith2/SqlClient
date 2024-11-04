@@ -749,7 +749,7 @@ namespace Microsoft.Data.SqlClient
 
         internal void Cancel(SqlCommand command)
         {
-            Debug.Assert(command == _command, "Calling command from an object that isn't this reader's command");
+            Debug.Assert(_command != null && command == _command, "Calling command from an object that isn't this reader's command");
             TdsParserStateObject stateObj = _stateObj;
             if (stateObj != null)
             {
