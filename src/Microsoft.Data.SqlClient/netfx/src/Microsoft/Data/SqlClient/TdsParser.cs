@@ -6882,9 +6882,35 @@ namespace Microsoft.Data.SqlClient
                     }
                     else
                     {
-                        //Debug.Assert(length > 0 && length < (long)(Int32.MaxValue), "Bad length for column");
-                        b = new byte[length];
-                        result = stateObj.TryReadByteArray(b, length);
+                        ////Debug.Assert(length > 0 && length < (long)(Int32.MaxValue), "Bad length for column");
+                        //TdsParserStateObject.StateSnapshot snapshot = stateObj._snapshot;
+                        //bool continueEnabled = snapshot != null &&
+                        //                       stateObj._snapshotStatus != TdsParserStateObject.SnapshotStatus.NotActive &&
+                        //                       snapshot.ContinueEnabled;
+                        //if (continueEnabled)
+                        //{
+                        //    b = stateObj._snapshot._storedBuffer;
+                        //    stateObj._snapshot._storedBuffer = null;
+                        //    Debug.Assert(b == null || b.Length == length, "stored buffer length must be null or must have been created with the correct length");
+                        //}
+
+                        //if (b == null)
+                        //{
+                        //    b = new byte[length];
+                        //}
+
+                        //result = stateObj.TryReadByteArray(b, length);
+
+                        //if (result != TdsOperationStatus.Done)
+                        //{
+                        //    if (result == TdsOperationStatus.NeedMoreData && continueEnabled)
+                        //    {
+                        //        stateObj._snapshot._storedBuffer = b;
+                        //    }
+                        //    return result;
+                        //}
+
+                        result = TryReadByteArrayWithContinue(stateObj, length, out b);
                         if (result != TdsOperationStatus.Done)
                         {
                             return result;
@@ -7003,6 +7029,48 @@ namespace Microsoft.Data.SqlClient
 
             Debug.Assert((stateObj._longlen == 0) && (stateObj._longlenleft == 0), "ReadSqlValue did not read plp field completely, longlen =" + stateObj._longlen.ToString((IFormatProvider)null) + ",longlenleft=" + stateObj._longlenleft.ToString((IFormatProvider)null));
             return TdsOperationStatus.Done;
+        }
+
+        private TdsOperationStatus TryReadByteArrayWithContinue(TdsParserStateObject stateObj, int length, out byte[] bytes)
+        {
+            bytes = null;
+            int offset = 0;
+            byte[] temp = null;
+            (bool isAvailable, bool isStarting, bool isContinuing) = stateObj.GetSnapshotStatuses();
+            if (isAvailable)
+            {
+                if (isContinuing || isStarting)
+                {
+                    temp = stateObj.TryTakeSnapshotStoredBuffer();
+                    Debug.Assert(bytes == null || bytes.Length == length, "stored buffer length must be null or must have been created with the correct length");
+                }
+                if (temp != null)
+                {
+                    offset = stateObj.GetSnapshotTotalSize();
+                }
+            }
+
+            
+            if (temp == null)
+            {
+                temp = new byte[length];
+            }
+
+            TdsOperationStatus result = stateObj.TryReadByteArray(temp, length, out _, offset, isStarting || isContinuing);
+
+            if (result == TdsOperationStatus.Done)
+            {
+                bytes = temp;
+            }
+            else if (result == TdsOperationStatus.NeedMoreData)
+            {
+                if (isStarting || isContinuing)
+                {
+                    stateObj.SetSnapshotStoredBuffer(temp);
+                }
+            }
+
+            return result;
         }
 
         private TdsOperationStatus TryReadSqlDateTime(SqlBuffer value, byte tdsType, int length, byte scale, TdsParserStateObject stateObj)
@@ -8567,14 +8635,22 @@ namespace Microsoft.Data.SqlClient
                 case TdsEnums.SQLVarCnt:
                     if (0 != (token & 0x80))
                     {
-                        ushort value;
-                        result = stateObj.TryReadUInt16(out value);
-                        if (result != TdsOperationStatus.Done)
+                        if (stateObj.IsSnapshotContinuing())
                         {
-                            tokenLength = 0;
-                            return result;
+                            tokenLength = stateObj.GetSnapshotStoredLength();
+                            Debug.Assert(tokenLength != 0, "stored buffer length on continue must contain the length of the data required for the token");
                         }
-                        tokenLength = value;
+                        else
+                        {
+                            ushort value;
+                            result = stateObj.TryReadUInt16(out value);
+                            if (result != TdsOperationStatus.Done)
+                            {
+                                tokenLength = 0;
+                                return result;
+                            }
+                            tokenLength = value;
+                        }
                         return TdsOperationStatus.Done;
                     }
                     else if (0 == (token & 0x0c))
