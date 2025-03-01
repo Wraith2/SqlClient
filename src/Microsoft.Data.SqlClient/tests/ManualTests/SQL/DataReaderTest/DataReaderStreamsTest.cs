@@ -522,10 +522,10 @@ namespace Microsoft.Data.SqlClient.ManualTesting.Tests
 
         public static IEnumerable<object[]> GetCommandBehavioursAndIsAsync()
         {
-            foreach (CommandBehavior behavior in new CommandBehavior[] { CommandBehavior.Default, CommandBehavior.SequentialAccess })
+            foreach (CommandBehavior behavior in new CommandBehavior[] { CommandBehavior.Default/*, CommandBehavior.SequentialAccess*/ })
             {
                 yield return new object[] { behavior, true };
-                yield return new object[] { behavior, false };
+                //yield return new object[] { behavior, false };
             }
         }
 

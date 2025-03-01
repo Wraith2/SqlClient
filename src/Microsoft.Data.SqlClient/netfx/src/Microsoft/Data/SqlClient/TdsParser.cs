@@ -13555,7 +13555,6 @@ namespace Microsoft.Data.SqlClient
 
         internal TdsOperationStatus TryReadPlpUnicodeCharsWithContinue(TdsParserStateObject stateObj, int length, out string resultString)
         {
-            Debug.WriteLine($"TryReadPlpUnicodeCharsWithContinue(,{length},)");
             resultString = null;
             char[] temp = null;
             bool buffIsRented = false;
