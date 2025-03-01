@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Common;
+using Microsoft.Data.ProviderBase;
 
 namespace Microsoft.Data.SqlClient
 {
@@ -1876,7 +1877,7 @@ namespace Microsoft.Data.SqlClient
                 {
                     // if there is a snapshot and it contains a stored plp buffer take it
                     // and try to use it if it is the right length
-                    buff = _snapshot._storedBuffer;
+                    buff = (byte[])_snapshot._storedBuffer;
                     _snapshot._storedBuffer = null;
                     if (_snapshot.ContinueEnabled && _snapshotStatus != SnapshotStatus.NotActive)
                     {
@@ -2732,10 +2733,10 @@ namespace Microsoft.Data.SqlClient
             return _snapshot?._storedBuffer?.Length ?? 0;
         }
 
-        internal byte[] TryTakeSnapshotStoredBuffer()
+        internal Array TryTakeSnapshotStoredBuffer()
         {
             Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
-            byte[] buffer = null;
+            Array buffer = null;
             if (_snapshot != null)
             {
                 buffer = _snapshot._storedBuffer;
@@ -2744,7 +2745,7 @@ namespace Microsoft.Data.SqlClient
             return buffer;
         }
 
-        internal void SetSnapshotStoredBuffer(byte[] buffer)
+        internal void SetSnapshotStoredBuffer(Array buffer)
         {
             Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
             Debug.Assert(_snapshot._storedBuffer == null, "should not overwrite snapshot stored buffer");
@@ -2775,6 +2776,14 @@ namespace Microsoft.Data.SqlClient
             return _snapshot.GetPacketDataOffset();
         }
 
+        internal int GetSnapshotDataSize()
+        {
+            Debug.Assert(_snapshot != null, "_snapshot must exist to read packet data size");
+            Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active read packet data size");
+
+            return _snapshot.GetPacketDataSize();
+        }
+
         internal sealed partial class StateSnapshot
         {
             private sealed partial class PacketData
@@ -2798,6 +2807,15 @@ namespace Microsoft.Data.SqlClient
                         previous = PrevPacket.RunningDataSize;
                     }
                     return previous;
+                }
+                internal int GetPacketDataSize()
+                {
+                    int previous = 0;
+                    if (PrevPacket != null)
+                    {
+                        previous = PrevPacket.RunningDataSize;
+                    }
+                    return Math.Max(RunningDataSize - previous, 0);
                 }
 
                 internal void Clear()
@@ -3012,6 +3030,11 @@ namespace Microsoft.Data.SqlClient
                         }
                     }
                 }
+
+                public override string ToString()
+                {
+                    return $"{PacketID}({GetPacketDataOffset()},{GetPacketDataSize()})";
+                }
             }
 #endif
 
@@ -3102,7 +3125,7 @@ namespace Microsoft.Data.SqlClient
             private StateObjectData _replayStateData;
             private StateObjectData _continueStateData;
 
-            internal byte[] _storedBuffer;
+            internal Array _storedBuffer;
 
             private PacketData _lastPacket;
             private PacketData _firstPacket;
@@ -3338,6 +3361,16 @@ namespace Microsoft.Data.SqlClient
                 if (_current != null)
                 {
                     offset = _current.GetPacketDataOffset();
+                }
+                return offset;
+            }
+
+            internal int GetPacketDataSize()
+            {
+                int offset = 0;
+                if (_current != null)
+                {
+                    offset = _current.GetPacketDataSize();
                 }
                 return offset;
             }

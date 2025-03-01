@@ -4708,7 +4708,17 @@ namespace Microsoft.Data.SqlClient
 #if DEBUG
             else
             {
-                Debug.Assert((_sharedState._columnDataBytesRemaining == 0 || _sharedState._columnDataBytesRemaining == -1) && _stateObj._longlen == 0, "Haven't read header yet, but column is partially read?");
+                //Debug.WriteLine($"(_sharedState._columnDataBytesRemaining == {_sharedState._columnDataBytesRemaining} || _sharedState._columnDataBytesRemaining == {_sharedState._columnDataBytesRemaining}) && _stateObj._longlen == {_stateObj._longlen}");
+                //if (!((_sharedState._columnDataBytesRemaining == 0 || _sharedState._columnDataBytesRemaining == -1) && _stateObj._longlen == 0))
+                //{
+                //    Debugger.Break();
+                //}
+                Debug.Assert(
+                    (_sharedState._columnDataBytesRemaining == 0 || _sharedState._columnDataBytesRemaining == -1) 
+                    && 
+                    (_stateObj._longlen == 0 || _stateObj.IsSnapshotContinuing()), 
+                    "Haven't read header yet, but column is partially read?"
+                );
             }
 #endif
 
