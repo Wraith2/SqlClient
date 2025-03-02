@@ -2833,6 +2833,8 @@ namespace Microsoft.Data.SqlClient
                 /// </summary>
                 public int RunningDataSize;
 
+                public int PacketID => Packet.GetIDFromHeader(Buffer.AsSpan(0, TdsEnums.HEADER_LEN));
+
                 internal int GetPacketDataOffset()
                 {
                     int previous = 0;
@@ -3007,8 +3009,6 @@ namespace Microsoft.Data.SqlClient
                 public int DebugPacketId;
                 public string Stack;
                 public byte[] Hash;
-
-                public int PacketID => Packet.GetIDFromHeader(Buffer.AsSpan(0, TdsEnums.HEADER_LEN));
 
                 public int SPID => Packet.GetSpidFromHeader(Buffer.AsSpan(0, TdsEnums.HEADER_LEN));
 
