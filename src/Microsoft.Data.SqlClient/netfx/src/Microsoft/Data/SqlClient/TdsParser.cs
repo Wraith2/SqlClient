@@ -13628,18 +13628,7 @@ namespace Microsoft.Data.SqlClient
                 totalCharsRead = 0;
                 return TdsOperationStatus.Done;       // No data
             }
-            if (!(
 
-                    (buff == null && offst == 0)
-                    ||
-                    (buff.Length >= offst + len)
-                    ||
-                    (buff.Length == (startOffsetByteCount >> 1) + 1)
-
-                ))
-            {
-                Debugger.Break();
-            }
             Debug.Assert((ulong)stateObj._longlen != TdsEnums.SQL_PLP_NULL, "Out of sync plp read request");
             Debug.Assert(
                 (buff == null && offst == 0) 

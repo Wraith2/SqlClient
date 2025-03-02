@@ -2064,6 +2064,18 @@ namespace Microsoft.Data.SqlClient
                         stackTrace = Environment.StackTrace;
                     }
 #endif
+                    bool capturedAsContinue = false;
+                    if (_snapshotStatus == SnapshotStatus.ReplayRunning || _snapshotStatus == SnapshotStatus.ReplayStarting)
+                    {
+                        if (_bTmpRead == 0 && _partialHeaderBytesRead == 0 && _longlenleft == 0 && _snapshot.ContinueEnabled)
+                        {
+                            // no temp between packets
+                            // mark this point as continue-able
+                            _snapshot.CaptureAsContinue(this);
+                            capturedAsContinue = true;
+                        }
+                    }
+
                     if (_snapshot.MoveNext())
                     {
 #if DEBUG
@@ -2082,11 +2094,12 @@ namespace Microsoft.Data.SqlClient
                             _lastStack = stackTrace;
                         }
 #endif
-                        if (_bTmpRead == 0 && _partialHeaderBytesRead == 0 && _longlenleft == 0 && _snapshot.ContinueEnabled)
+                        if (_bTmpRead == 0 && _partialHeaderBytesRead == 0 && _longlenleft == 0 && _snapshot.ContinueEnabled && !capturedAsContinue)
                         {
                             // no temp between packets
                             // mark this point as continue-able
                             _snapshot.CaptureAsContinue(this);
+                            capturedAsContinue = true;
                         }
                     }
                 }
@@ -2718,7 +2731,7 @@ namespace Microsoft.Data.SqlClient
 
         internal bool IsSnapshotAvailable()
         {
-            return _snapshot != null;
+            return _snapshot != null && _snapshot.ContinueEnabled;
         }
         /// <summary>
         /// Returns true if the state object is in the state of continuing from a previously stored snapshot packet 
@@ -2733,16 +2746,9 @@ namespace Microsoft.Data.SqlClient
                 _snapshotStatus == TdsParserStateObject.SnapshotStatus.ContinueRunning;
         }
 
-        internal bool IsSnapshotStarting()
-        {
-            return _snapshot != null &&
-                   _snapshot.ContinueEnabled &&
-                   _snapshotStatus == TdsParserStateObject.SnapshotStatus.ReplayStarting;
-        }
-
         internal (bool IsAvailable, bool IsStarting, bool IsContinuing) GetSnapshotStatuses()
         {
-            bool isAvailable = _snapshot != null;
+            bool isAvailable = _snapshot != null && _snapshot.ContinueEnabled;
             bool isStarting = false;
             bool isContinuing = false;
             if (isAvailable)
@@ -2755,13 +2761,13 @@ namespace Microsoft.Data.SqlClient
 
         internal int GetSnapshotStorageLength<T>()
         {
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "should not access snapshot accessor functions without first checking that the snapshot is available");
             return (_snapshot?._storage as IList<T>)?.Count ?? 0;
         }
 
         internal object TryTakeSnapshotStorage()
         {
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "should not access snapshot accessor functions without first checking that the snapshot is present");
             object buffer = null;
             if (_snapshot != null)
             {
@@ -2773,12 +2779,8 @@ namespace Microsoft.Data.SqlClient
 
         internal void SetSnapshotStorage(object buffer)
         {
-            if (buffer is char[] chars && chars.Length == 463)
-            {
-                Debugger.Break();
-            }
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
-            //Debug.Assert(_snapshot._storage == null, "should not overwrite snapshot stored buffer");
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "should not access snapshot accessor functions without first checking that the snapshot is available");
+            Debug.Assert(_snapshot._storage == null, "should not overwrite snapshot stored buffer");
             if (_snapshot != null)
             {
                 _snapshot._storage = buffer;
@@ -2792,31 +2794,27 @@ namespace Microsoft.Data.SqlClient
         /// <param name="countOfBytesCopiedFromCurrentPacket"></param>
         internal void SetSnapshotDataSize(int countOfBytesCopiedFromCurrentPacket)
         {
-            Debug.Assert(_snapshot != null, "_snapshot must exist to store packet data size");
-            //Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active to store packet data size");
-
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "_snapshot must exist to store packet data size");
             _snapshot.SetPacketDataSize(countOfBytesCopiedFromCurrentPacket);
         }
 
         internal int GetSnapshotTotalSize()
         {
-            Debug.Assert(_snapshot != null, "_snapshot must exist to read packet data size");
-            Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active read packet data size");
-
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "_snapshot must exist to read total size");
+            Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active read total size");
             return _snapshot.GetPacketDataOffset();
         }
 
         internal int GetSnapshotDataSize()
         {
-            Debug.Assert(_snapshot != null, "_snapshot must exist to read packet data size");
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "_snapshot must exist to read packet data size");
             Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active read packet data size");
-
             return _snapshot.GetPacketDataSize();
         }
 
         internal int GetSnapshotPacketID()
         {
-            Debug.Assert(_snapshot != null, "_snapshot must exist to read packet data size");
+            Debug.Assert(_snapshot != null && _snapshot.ContinueEnabled, "_snapshot must exist to read packet data size");
             return _snapshot.GetPacketID();
         }
 
