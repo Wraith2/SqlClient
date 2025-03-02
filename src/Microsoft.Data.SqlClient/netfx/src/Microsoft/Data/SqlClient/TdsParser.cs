@@ -6872,8 +6872,8 @@ namespace Microsoft.Data.SqlClient
                         //                       snapshot.ContinueEnabled;
                         //if (continueEnabled)
                         //{
-                        //    b = stateObj._snapshot._storedBuffer;
-                        //    stateObj._snapshot._storedBuffer = null;
+                        //    b = stateObj._snapshot._storage;
+                        //    stateObj._snapshot._storage = null;
                         //    Debug.Assert(b == null || b.Length == length, "stored buffer length must be null or must have been created with the correct length");
                         //}
 
@@ -6888,7 +6888,7 @@ namespace Microsoft.Data.SqlClient
                         //{
                         //    if (result == TdsOperationStatus.NeedMoreData && continueEnabled)
                         //    {
-                        //        stateObj._snapshot._storedBuffer = b;
+                        //        stateObj._snapshot._storage = b;
                         //    }
                         //    return result;
                         //}
@@ -7024,7 +7024,7 @@ namespace Microsoft.Data.SqlClient
             {
                 if (isContinuing || isStarting)
                 {
-                    temp = (byte[])stateObj.TryTakeSnapshotStoredBuffer();
+                    temp = (byte[])stateObj.TryTakeSnapshotStorage();
                     Debug.Assert(bytes == null || bytes.Length == length, "stored buffer length must be null or must have been created with the correct length");
                 }
                 if (temp != null)
@@ -7049,7 +7049,7 @@ namespace Microsoft.Data.SqlClient
             {
                 if (isStarting || isContinuing)
                 {
-                    stateObj.SetSnapshotStoredBuffer(temp);
+                    stateObj.SetSnapshotStorage(temp);
                 }
             }
 
@@ -8620,7 +8620,7 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (stateObj.IsSnapshotContinuing())
                         {
-                            tokenLength = stateObj.GetSnapshotStoredLength();
+                            tokenLength = stateObj.GetSnapshotStorageLength<byte>();
                             Debug.Assert(tokenLength != 0, "stored buffer length on continue must contain the length of the data required for the token");
                         }
                         else
@@ -13511,7 +13511,6 @@ namespace Microsoft.Data.SqlClient
         // Returns the actual chars read
         private TdsOperationStatus TryReadPlpUnicodeCharsChunk(char[] buff, int offst, int len, TdsParserStateObject stateObj, out int charsRead)
         {
-            Debug.WriteLine($"TryReadPlpUnicodeCharsChunk({offst}, {len})");
             Debug.Assert((buff == null && len == 0) || (buff.Length >= offst + len), "Invalid length sent to ReadPlpUnicodeChars()!");
             Debug.Assert((stateObj._longlen != 0) && (stateObj._longlen != TdsEnums.SQL_PLP_NULL),
                         "Out of sync plp read request");
@@ -13565,7 +13564,7 @@ namespace Microsoft.Data.SqlClient
             {
                 if (isContinuing || isStarting)
                 {
-                    temp = (char[])stateObj.TryTakeSnapshotStoredBuffer();
+                    temp = (char[])stateObj.TryTakeSnapshotStorage();
                     Debug.Assert(temp == null || length == int.MaxValue || temp.Length == length, "stored buffer length must be null or must have been created with the correct length");
                 }
                 if (temp != null)
@@ -13612,7 +13611,7 @@ namespace Microsoft.Data.SqlClient
             {
                 if (isStarting || isContinuing)
                 {
-                    stateObj.SetSnapshotStoredBuffer(temp);
+                    stateObj.SetSnapshotStorage(temp);
                 }
             }
 
