@@ -4,17 +4,14 @@
 
 using System;
 using System.Buffers.Binary;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Common;
-using Microsoft.Data.ProviderBase;
 
 namespace Microsoft.Data.SqlClient
 {
@@ -1697,6 +1694,7 @@ namespace Microsoft.Data.SqlClient
             }
             byte[] buf = null;
             int offset = 0;
+            (bool isAvailable, bool isStarting, bool isContinuing) = GetSnapshotStatuses();
 
             if (isPlp)
             {
@@ -1713,20 +1711,39 @@ namespace Microsoft.Data.SqlClient
             {
                 if (((_inBytesUsed + length) > _inBytesRead) || (_inBytesPacket < length))
                 {
-                    if (_bTmp == null || _bTmp.Length < length)
+                    int startOffset = 0;
+                    if (isAvailable)
                     {
-                        _bTmp = new byte[length];
+                        if (isContinuing || isStarting)
+                        {
+                            buf = (byte[])TryTakeSnapshotStorage();
+                            Debug.Assert(buf == null || buf.Length == length, "stored buffer length must be null or must have been created with the correct length");
+                        }
+                        if (buf != null)
+                        {
+                            startOffset = GetSnapshotTotalSize();
+                        }
                     }
 
-                    TdsOperationStatus result = TryReadByteArray(_bTmp, length);
+                    if (buf == null || buf.Length < length)
+                    {
+                        buf = new byte[length];
+                    }
+
+                    TdsOperationStatus result = TryReadByteArray(buf, length, out _, startOffset, isAvailable);
+                    
                     if (result != TdsOperationStatus.Done)
                     {
+                        if (result == TdsOperationStatus.NeedMoreData)
+                        {
+                            if (isStarting || isContinuing)
+                            {
+                                SetSnapshotStorage(buf);
+                            }
+                        }
                         value = null;
                         return result;
                     }
-
-                    // assign local to point to parser scratch buffer
-                    buf = _bTmp;
 
                     AssertValidState();
                 }
@@ -2681,6 +2698,7 @@ namespace Microsoft.Data.SqlClient
                 snapshot.Clear();
             }
             _snapshot = snapshot;
+            Debug.Assert(_snapshot._storage == null);
             _snapshot.CaptureAsStart(this);
             _snapshotStatus = SnapshotStatus.NotActive;
         }
@@ -2691,6 +2709,7 @@ namespace Microsoft.Data.SqlClient
             {
                 StateSnapshot snapshot = _snapshot;
                 _snapshot = null;
+                Debug.Assert(snapshot._storage == null);
                 snapshot.Clear();
                 Interlocked.CompareExchange(ref _cachedSnapshot, snapshot, null);
             }
@@ -2754,6 +2773,10 @@ namespace Microsoft.Data.SqlClient
 
         internal void SetSnapshotStorage(object buffer)
         {
+            if (buffer is char[] chars && chars.Length == 463)
+            {
+                Debugger.Break();
+            }
             Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is present");
             //Debug.Assert(_snapshot._storage == null, "should not overwrite snapshot stored buffer");
             if (_snapshot != null)
@@ -2789,6 +2812,12 @@ namespace Microsoft.Data.SqlClient
             Debug.Assert(_snapshotStatus != SnapshotStatus.NotActive, "_snapshot must be active read packet data size");
 
             return _snapshot.GetPacketDataSize();
+        }
+
+        internal int GetSnapshotPacketID()
+        {
+            Debug.Assert(_snapshot != null, "_snapshot must exist to read packet data size");
+            return _snapshot.GetPacketID();
         }
 
         internal sealed partial class StateSnapshot
@@ -3382,6 +3411,16 @@ namespace Microsoft.Data.SqlClient
                 return offset;
             }
 
+            internal int GetPacketID()
+            {
+                int id = 0;
+                if (_current != null)
+                {
+                    id = _current.PacketID;
+                }
+                return id;
+            }
+
             internal void Clear()
             {
                 ClearState();
@@ -3401,6 +3440,8 @@ namespace Microsoft.Data.SqlClient
 
             private void ClearState()
             {
+                Debug.Assert(_storage == null);
+                _storage = null;
                 _replayStateData.Clear(_stateObj);
                 _continueStateData?.Clear(_stateObj, trackStack: false);
 #if DEBUG

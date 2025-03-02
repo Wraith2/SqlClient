@@ -6865,34 +6865,6 @@ namespace Microsoft.Data.SqlClient
                     }
                     else
                     {
-                        ////Debug.Assert(length > 0 && length < (long)(Int32.MaxValue), "Bad length for column");
-                        //TdsParserStateObject.StateSnapshot snapshot = stateObj._snapshot;
-                        //bool continueEnabled = snapshot != null &&
-                        //                       stateObj._snapshotStatus != TdsParserStateObject.SnapshotStatus.NotActive &&
-                        //                       snapshot.ContinueEnabled;
-                        //if (continueEnabled)
-                        //{
-                        //    b = stateObj._snapshot._storage;
-                        //    stateObj._snapshot._storage = null;
-                        //    Debug.Assert(b == null || b.Length == length, "stored buffer length must be null or must have been created with the correct length");
-                        //}
-
-                        //if (b == null)
-                        //{
-                        //    b = new byte[length];
-                        //}
-
-                        //result = stateObj.TryReadByteArray(b, length);
-
-                        //if (result != TdsOperationStatus.Done)
-                        //{
-                        //    if (result == TdsOperationStatus.NeedMoreData && continueEnabled)
-                        //    {
-                        //        stateObj._snapshot._storage = b;
-                        //    }
-                        //    return result;
-                        //}
-
                         result = TryReadByteArrayWithContinue(stateObj, length, out b);
                         if (result != TdsOperationStatus.Done)
                         {
@@ -13656,8 +13628,6 @@ namespace Microsoft.Data.SqlClient
                 totalCharsRead = 0;
                 return TdsOperationStatus.Done;       // No data
             }
-
-            Debug.Assert((ulong)stateObj._longlen != TdsEnums.SQL_PLP_NULL, "Out of sync plp read request");
             if (!(
 
                     (buff == null && offst == 0)
@@ -13670,6 +13640,7 @@ namespace Microsoft.Data.SqlClient
             {
                 Debugger.Break();
             }
+            Debug.Assert((ulong)stateObj._longlen != TdsEnums.SQL_PLP_NULL, "Out of sync plp read request");
             Debug.Assert(
                 (buff == null && offst == 0) 
                 || 
@@ -13700,6 +13671,8 @@ namespace Microsoft.Data.SqlClient
             TdsOperationStatus result;
 
             bool partialReadInProgress = (startOffsetByteCount & 0x1) == 1;
+            bool restartingDataSizeCount = startOffsetByteCount == 0;
+            int currentPacketId = 0;
 
             if (stateObj._longlenleft == 0)
             {
@@ -13768,7 +13741,7 @@ namespace Microsoft.Data.SqlClient
 
                     if (writeDataSizeToSnapshot)
                     {
-                        stateObj.SetSnapshotDataSize(stateObj.GetSnapshotDataSize() + charsRead * 2);
+                        currentPacketId = IncrementSnapshotDataSize(stateObj, restartingDataSizeCount, currentPacketId, charsRead * 2);
                     }
                 }
 
@@ -13802,7 +13775,7 @@ namespace Microsoft.Data.SqlClient
                             // we need to write the single b1 byte to the array because we may run out of data 
                             // and need to wait for another packet
                             buff[offst] = (char)((b1 & 0xff));
-                            stateObj.SetSnapshotDataSize(stateObj.GetSnapshotDataSize() + 1);
+                            currentPacketId = IncrementSnapshotDataSize(stateObj, restartingDataSizeCount, currentPacketId, 1);
                         }
 
                         result = stateObj.TryReadPlpLength(false, out _);
@@ -13828,7 +13801,7 @@ namespace Microsoft.Data.SqlClient
 
                     if (writeDataSizeToSnapshot)
                     {
-                        stateObj.SetSnapshotDataSize(stateObj.GetSnapshotDataSize() + 1);
+                        currentPacketId = IncrementSnapshotDataSize(stateObj, restartingDataSizeCount, currentPacketId, 1);
                     }
                 }
                 if (stateObj._longlenleft == 0)
@@ -13847,6 +13820,36 @@ namespace Microsoft.Data.SqlClient
                 }
             }
             return TdsOperationStatus.Done;
+
+            static int IncrementSnapshotDataSize(TdsParserStateObject stateObj, bool resetting, int previousPacketId, int value)
+            {
+                int current = 0;
+                if (resetting)
+                {
+                    int currentPacketId = stateObj.GetSnapshotPacketID();
+                    if (previousPacketId == currentPacketId)
+                    {
+                        // we have already reset it the first time we saw it so just add normally
+                        current = stateObj.GetSnapshotDataSize();
+                    }
+                    else
+                    {
+                        // a packet we haven't seen before, reset the size
+                        current = 0;
+                    }
+
+                    stateObj.SetSnapshotDataSize(current + value);
+
+                    // return new packetid so next time we see this packet we know it isn't new
+                    return currentPacketId;
+                }
+                else
+                {
+                    current = stateObj.GetSnapshotDataSize();
+                    stateObj.SetSnapshotDataSize(current + value);
+                    return previousPacketId;
+                }
+            }
         }
 
         internal int ReadPlpAnsiChars(ref char[] buff, int offst, int len, SqlMetaDataPriv metadata, TdsParserStateObject stateObj)
