@@ -13331,7 +13331,7 @@ namespace Microsoft.Data.SqlClient
 
             totalCharsRead = (startOffsetByteCount >> 1);
             charsLeft -= totalCharsRead;
-            offst = totalCharsRead;
+            offst += totalCharsRead;
 
 
             while (charsLeft > 0)
