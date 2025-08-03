@@ -4064,10 +4064,6 @@ namespace Microsoft.Data.SqlClient
                 {
                     bool isNull;
                     ulong dataLength;
-                    //if (AppContext.TryGetSwitch("btmp3", out bool value) && value && _sharedState._nextColumnHeaderToRead == 8)
-                    //{
-                    //    //Debugger.Break();
-                    //}
 
                     if (
                         _stateObj.GetSnapshotStatuses() is {CanContinue:true, IsStarting:false } && 
@@ -4081,8 +4077,6 @@ namespace Microsoft.Data.SqlClient
                         _stateObj.ClearSnapshotColumnHeaderInfo();
                         isNull = cachedIsNull;
                         dataLength = cachedDataLength;
-                        // if we have used cached data then we know that we have just transitioned from a ReplayRunning state to a ContinueRunning state
-                        //  we know this means that a snapshot of the 
                     }
                     else
                     {

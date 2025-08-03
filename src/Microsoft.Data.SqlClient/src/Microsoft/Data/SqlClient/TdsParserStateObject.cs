@@ -227,7 +227,6 @@ namespace Microsoft.Data.SqlClient
         internal int[] _decimalBits;                // scratch buffer for decimal/numeric data
         internal byte[] _bTmp = new byte[TdsEnums.SQL2005_HEADER_LEN];  // Scratch buffer for misc use
         internal int _bTmpRead;                   // Counter for number of temporary bytes read
-        internal List<string> _readLog = new List<string>(100);
         internal Decoder _plpdecoder;             // Decoder object to process plp character data
         internal bool _accumulateInfoEvents;               // TRUE - accumulate info messages during TdsParser.Run, FALSE - fire them
         internal List<SqlError> _pendingInfoEvents;
@@ -236,14 +235,21 @@ namespace Microsoft.Data.SqlClient
         internal byte[] _bShortBytes;                 // scratch buffer to serialize Short values (2 bytes).
         internal byte[] _bDecimalBytes;                 // scratch buffer to serialize decimal values (17 bytes).
 
+#if DEBUG
+        internal List<string> _readLog = new List<string>(100);
+#endif
+
+        [Conditional("DEBUG")]
         internal void Log(string value)
         {
             _readLog.Add(value);
         }
+        [Conditional("DEBUG")]
         internal void AddRead(int count, [CallerMemberName] string by = null)
         {
             _readLog.Add($"    ({_inBytesUsed - count}, {count}) {by}");
         }
+        [Conditional("DEBUG")]
         internal void NegateRead()
         {
             _readLog.RemoveAt(_readLog.Count - 1);
@@ -3617,7 +3623,7 @@ namespace Microsoft.Data.SqlClient
             return buffer.ToString();
         }
         
-        internal void SetSnapshot()
+        internal void SetSnapshot([CallerMemberName] string caller = null)
         {
             StateSnapshot snapshot = _snapshot;
             if (snapshot is null)
@@ -3632,10 +3638,11 @@ namespace Microsoft.Data.SqlClient
             Debug.Assert(_snapshot._storage == null);
             _snapshot.CaptureAsStart(this);
             _snapshotStatus = SnapshotStatus.NotActive;
-            Log($"-- moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
+            Log("");
+            Log($"-- {caller} moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
         }
 
-        internal void ResetSnapshot()
+        internal void ResetSnapshot([CallerMemberName] string caller = null)
         {
             if (_snapshot != null)
             {
@@ -3645,7 +3652,8 @@ namespace Microsoft.Data.SqlClient
                 Interlocked.CompareExchange(ref _cachedSnapshot, snapshot, null);
             }
             _snapshotStatus = SnapshotStatus.NotActive;
-            Log($"-- moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0},  packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
+            Log("");
+            Log($"-- {caller} moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0},  packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
         }
 
         internal bool IsSnapshotAvailable()
@@ -4337,7 +4345,7 @@ namespace Microsoft.Data.SqlClient
                 _lastPacket = packetData;
             }
 
-            internal bool MoveNext()
+            internal bool MoveNext([CallerMemberName] string caller = null)
             {
                 bool retval = false;
                 SnapshotStatus moveToMode = SnapshotStatus.ReplayRunning;
@@ -4362,7 +4370,8 @@ namespace Microsoft.Data.SqlClient
                 {
                     _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                     _stateObj._snapshotStatus = moveToMode;
-                    _stateObj.Log($"-- moved to {moveToMode} packetId:{( _stateObj._snapshotStatus != SnapshotStatus.NotActive ? _stateObj._snapshot?.GetPacketID() : -1)}");
+                    _stateObj.Log("");
+                    _stateObj.Log($"-- {caller} moved to {moveToMode} position:{_stateObj._snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{( _stateObj._snapshotStatus != SnapshotStatus.NotActive ? _stateObj._snapshot?.GetPacketID() : -1)}");
                     retval = true;
                 }
 
@@ -4378,21 +4387,17 @@ namespace Microsoft.Data.SqlClient
                 _stateObj.AssertValidState();
             }
 
-            internal bool MoveToContinue()
+            internal bool MoveToContinue([CallerMemberName] string caller = null)
             {
                 if (ContinueEnabled)
                 {
                     if (_continuePacket != null && _continuePacket != _current)
                     {
-                        //Debug.Assert(_stateObj._bTmpRead == 0);
-                        if (_stateObj._bTmpRead > 0)
-                        {
-                            AppContext.SetSwitch("btmp", true);
-                        }
                         _continueStateData.Restore(_stateObj, clearTemps: false);
                         _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                         _stateObj._snapshotStatus = SnapshotStatus.ContinueRunning;
-                        _stateObj.Log($"-- moved to {SnapshotStatus.ContinueRunning}");
+                        _stateObj.Log("");
+                        _stateObj.Log($"-- {caller} moved to {_stateObj._snapshotStatus} position:{_stateObj._snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{(_stateObj._snapshotStatus != SnapshotStatus.NotActive ? _stateObj._snapshot?.GetPacketID() : -1)}");
                         _stateObj.AssertValidState();
                         return true;
                     }

@@ -179,7 +179,8 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_snapshotStatus != SnapshotStatus.NotActive && appended)
                         {
-                            _snapshot.MoveNext();
+                            Log("!! not calling movenext even though we have a packet");
+                            //_snapshot.MoveNext();
                         }
                     }
 
