@@ -6446,6 +6446,8 @@ namespace Microsoft.Data.SqlClient
                                 if (stateObj._readerState != null)
                                 {
                                     stateObj._readerState._nextColumnDataToRead++;
+                                    stateObj.Log($"SqlDataReader.TryReadSqlValue _nextColumnHeaderToRead:{stateObj._readerState._nextColumnHeaderToRead}, _nextColumnDataToRead:{stateObj._readerState._nextColumnDataToRead}");
+                                    stateObj._readerState._nextColumnDataToReadWrittenBy = (stateObj._readerState._nextColumnDataToRead, "TryReadSqlValue");
                                 }
 
                                 DrainData(stateObj);

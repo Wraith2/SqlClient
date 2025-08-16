@@ -71,7 +71,7 @@ namespace Microsoft.Data.SqlClient
                     {
                         _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
 
-                        SetBuffer(_inBuff, 0, (int)dataSize);
+                        SetBuffer(_inBuff, 0, (int)dataSize,"ProcessSniPacket(set after read)");
                     }
 
                     bool recurse = false;
@@ -123,7 +123,7 @@ namespace Microsoft.Data.SqlClient
                             // if some data was taken from the new packet adjust the counters
                             if (dataSize != newDataLength || 0 != newDataOffset)
                             {
-                                SetBuffer(_inBuff, newDataOffset, newDataLength);
+                                SetBuffer(_inBuff, newDataOffset, newDataLength, "ProcessSniPacket(resize length)");
                             }
 
                             if (_snapshot != null)
@@ -137,7 +137,7 @@ namespace Microsoft.Data.SqlClient
                             }
                             else
                             {
-                                SetBuffer(_inBuff, 0, _inBytesRead);
+                                SetBuffer(_inBuff, 0, _inBytesRead, "ProcessSniPacket(use existing directly)");
                             }
                             bufferIsPartialCompleted = true;
                         }

@@ -46,6 +46,9 @@ namespace Microsoft.Data.SqlClient
             internal int _nextColumnDataToRead;
             internal long _columnDataBytesRemaining;
             internal bool _dataReady; // ready to ProcessRow
+
+            internal (int, string) _nextColumnHeaderToReadWrittenBy;
+            internal (int, string) _nextColumnDataToReadWrittenBy;
         }
 
         internal SharedState _sharedState = new SharedState();
@@ -3689,6 +3692,8 @@ namespace Microsoft.Data.SqlClient
 
                         _sharedState._nextColumnHeaderToRead = 0;
                         _sharedState._nextColumnDataToRead = 0;
+                        _stateObj.Log($"SqlDataReader.TryReadInternal _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                        _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadInternal");
                         _sharedState._columnDataBytesRemaining = -1; // unknown
                         _lastColumnWithDataChunkRead = -1;
 
@@ -3888,6 +3893,8 @@ namespace Microsoft.Data.SqlClient
                 _sharedState._columnDataBytesRemaining = 0;
             }
             _sharedState._nextColumnDataToRead++;
+            _stateObj.Log($"SqlDataReader.TryReadeColumnData _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+            _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnData");
             return TdsOperationStatus.Done;
         }
 
@@ -3992,10 +3999,13 @@ namespace Microsoft.Data.SqlClient
                         }
 
                         _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                        _stateObj.Log($"  TryReadColumnInternal 1 _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                        _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 1");
                         _sharedState._nextColumnHeaderToRead++;
                     }
                     else if (_sharedState._nextColumnHeaderToRead == i)
                     {
+                        Debug.Assert(_sharedState._nextColumnHeaderToRead == _sharedState._nextColumnDataToRead, "header and data values must be in sync");
                         bool isNull;
                         ulong dataLength;
                         result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
@@ -4005,6 +4015,8 @@ namespace Microsoft.Data.SqlClient
                         }
 
                         _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                        _stateObj.Log($"  TryReadColumnInternal 2 _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                        _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 2");
                         _sharedState._nextColumnHeaderToRead++;  // We read this one
                         _sharedState._columnDataBytesRemaining = (long)dataLength;
 
@@ -4034,6 +4046,8 @@ namespace Microsoft.Data.SqlClient
                                 }
                                 _sharedState._columnDataBytesRemaining = 0;
                                 _sharedState._nextColumnDataToRead++;
+                                _stateObj.Log($"  TryReadColumnInternal 3 _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                                _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnData 3");
                             }
                             else
                             {
@@ -4063,26 +4077,29 @@ namespace Microsoft.Data.SqlClient
                         }
                     )
                     {
-                        _stateObj.Log($"  col header {_sharedState._nextColumnHeaderToRead} fetched cached values");
+                        _stateObj.Log($"  col header _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead} fetched cached values");
                         _stateObj.ClearSnapshotColumnHeaderInfo();
                         isNull = cachedIsNull;
                         dataLength = cachedDataLength;
-                        // if we have used cached data then we know that the nextColumnDataToRead and nextColumnHeaderToRead
-                        //   variables were incremented by the code that successfully read the header values, so don't increment them again
+                        // if we have used cached data then we know that we have just transitioned from a ReplayRunning state to a ContinueRunning state
+                        //  we know this means that a snapshot of the 
                     }
                     else
                     {
-                        _stateObj.Log($"  col header {_sharedState._nextColumnHeaderToRead}, type:{columnMetaData.metaType.TypeName}");
+                        _stateObj.Log($"  col header _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}");
                         result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
                         if (result != TdsOperationStatus.Done)
                         {
                             return result;
                         }
 
-                        _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
-                        _sharedState._nextColumnHeaderToRead++;  // We read this one
+
+                        _stateObj.Log($"  increment col after header read _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                        _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 4");
                     }
 
+                    _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                    _sharedState._nextColumnHeaderToRead++;  // We read this one
 
                     // Trigger new behavior for RowVersion to send DBNull.Value by allowing entry for Timestamp or discard entry for Timestamp for legacy support.
                     // if LegacyRowVersionNullBehavior is enabled, Timestamp type must enter "else" block.
@@ -4096,6 +4113,8 @@ namespace Microsoft.Data.SqlClient
                         if (!readHeaderOnly)
                         {
                             _sharedState._nextColumnDataToRead++;
+                            _stateObj.Log($"  increment col after null read _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                            _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 5");
                         }
                     }
                     else
@@ -4131,11 +4150,13 @@ namespace Microsoft.Data.SqlClient
                                 {
                                     _stateObj.Log($"  NOT storing column data for {_sharedState._nextColumnDataToRead} error");
                                 }
-
+                                _stateObj.Log($"  col needs more data {_sharedState._nextColumnDataToRead}");
                                 return result;
                             }
                             _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
                             _sharedState._nextColumnDataToRead++;
+                            _stateObj.Log($"  increment col after value read _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                            _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 6");
                         }
                         else
                         {
@@ -5949,7 +5970,9 @@ namespace Microsoft.Data.SqlClient
                 _hasRows = _snapshot._hasRows;
                 _altRowStatus = _snapshot._altRowStatus;
                 _sharedState._nextColumnDataToRead = _snapshot._nextColumnDataToRead;
+                _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "PrepareForAsyncContinuation");
                 _sharedState._nextColumnHeaderToRead = _snapshot._nextColumnHeaderToRead;
+                _stateObj.Log($"SqlDataReader.PrepareForAsyncContinuation _nextColumnHeaderToRead:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
                 _columnDataBytesRead = _snapshot._columnDataBytesRead;
                 _sharedState._columnDataBytesRemaining = _snapshot._columnDataBytesRemaining;
 

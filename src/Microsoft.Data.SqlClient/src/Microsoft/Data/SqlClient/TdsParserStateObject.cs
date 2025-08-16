@@ -227,7 +227,6 @@ namespace Microsoft.Data.SqlClient
         internal int[] _decimalBits;                // scratch buffer for decimal/numeric data
         internal byte[] _bTmp = new byte[TdsEnums.SQL2005_HEADER_LEN];  // Scratch buffer for misc use
         internal int _bTmpRead;                   // Counter for number of temporary bytes read
-        internal (int, int) _bTmpReadWrittenBy;
         internal List<string> _readLog = new List<string>(100);
         internal Decoder _plpdecoder;             // Decoder object to process plp character data
         internal bool _accumulateInfoEvents;               // TRUE - accumulate info messages during TdsParser.Run, FALSE - fire them
@@ -338,7 +337,7 @@ namespace Microsoft.Data.SqlClient
 
         // Prevents any pending read from completing until the user signals it using
         // CompletePendingReadWithSuccess() or CompletePendingReadWithFailure(int errorCode) in SqlCommand\SqlDataReader
-        internal static bool s_forcePendingReadsToWaitForUser = true;
+        internal static bool s_forcePendingReadsToWaitForUser = false;
         internal TaskCompletionSource<object> _realNetworkPacketTaskSource;
 
         // Field is never assigned to, and will always have its default value
@@ -1311,7 +1310,7 @@ namespace Microsoft.Data.SqlClient
             _inBuff = buffer;
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
-            Log(caller +"->SetBuffer");
+            //Log(caller +"->SetBuffer");
         }
 
         internal void NewBuffer(int size)
@@ -1789,7 +1788,6 @@ namespace Microsoft.Data.SqlClient
                     Log($"  partial read started, have:{bytesRead}, needed:{8 - bytesRead}");
                     Debug.Assert(_bTmpRead + bytesRead <= 8, "Read more data than required");
                     _bTmpRead += bytesRead;
-                    _bTmpReadWrittenBy = (1, bytesRead);
                     value = 0;
                     return result;
                 }
@@ -1798,7 +1796,6 @@ namespace Microsoft.Data.SqlClient
                     Log($"  partial read completed, needed:{8 - bytesRead}, total:8");
                     Debug.Assert(_bTmpRead + bytesRead == 8, "TryReadByteArray returned true without reading all data required");
                     _bTmpRead = 0;
-                    _bTmpReadWrittenBy = (2, 0);
                     AssertValidState();
                     value = BinaryPrimitives.ReadInt64LittleEndian(_bTmp);
                     return TdsOperationStatus.Done;
@@ -1876,7 +1873,6 @@ namespace Microsoft.Data.SqlClient
                     Log($"  partial read started, have:{bytesRead}, needed:{4 - bytesRead}");
                     Debug.Assert(_bTmpRead + bytesRead <= 4, "Read more data than required");
                     _bTmpRead += bytesRead;
-                    _bTmpReadWrittenBy = (3, bytesRead);
                     //if (_bTmpRead == 3)
                     //{
                     //    AppContext.SetSwitch("btmp3", true);
@@ -1889,7 +1885,6 @@ namespace Microsoft.Data.SqlClient
                     Log($"  partial read completed, needed:{4 - bytesRead}, total:4");
                     Debug.Assert(_bTmpRead + bytesRead == 4, "TryReadByteArray returned true without reading all data required");
                     _bTmpRead = 0;
-                    _bTmpReadWrittenBy = (4, 0);
                     AssertValidState();
                     value = BinaryPrimitives.ReadUInt32LittleEndian(_bTmp);
                     return TdsOperationStatus.Done;
@@ -3637,7 +3632,7 @@ namespace Microsoft.Data.SqlClient
             Debug.Assert(_snapshot._storage == null);
             _snapshot.CaptureAsStart(this);
             _snapshotStatus = SnapshotStatus.NotActive;
-            Log($"CaptureAsStart status:{SnapshotStatus.NotActive}, position:{_snapshot._replayStateData._inBytesUsed}");
+            Log($"-- moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
         }
 
         internal void ResetSnapshot()
@@ -3650,7 +3645,7 @@ namespace Microsoft.Data.SqlClient
                 Interlocked.CompareExchange(ref _cachedSnapshot, snapshot, null);
             }
             _snapshotStatus = SnapshotStatus.NotActive;
-            Log($"ResetSnapshot status:{SnapshotStatus.NotActive}");
+            Log($"-- moved to {SnapshotStatus.NotActive}, position:{_snapshot?._replayStateData._inBytesUsed ?? 0},  packetId:{(_snapshotStatus != SnapshotStatus.NotActive ? _snapshot?.GetPacketID() : -1)}");
         }
 
         internal bool IsSnapshotAvailable()
@@ -4367,7 +4362,7 @@ namespace Microsoft.Data.SqlClient
                 {
                     _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                     _stateObj._snapshotStatus = moveToMode;
-                    _stateObj.Log($"moved to {moveToMode}");
+                    _stateObj.Log($"-- moved to {moveToMode} packetId:{( _stateObj._snapshotStatus != SnapshotStatus.NotActive ? _stateObj._snapshot?.GetPacketID() : -1)}");
                     retval = true;
                 }
 
@@ -4397,7 +4392,7 @@ namespace Microsoft.Data.SqlClient
                         _continueStateData.Restore(_stateObj, clearTemps: false);
                         _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                         _stateObj._snapshotStatus = SnapshotStatus.ContinueRunning;
-                        _stateObj.Log($"moved to {SnapshotStatus.ContinueRunning}");
+                        _stateObj.Log($"-- moved to {SnapshotStatus.ContinueRunning}");
                         _stateObj.AssertValidState();
                         return true;
                     }
