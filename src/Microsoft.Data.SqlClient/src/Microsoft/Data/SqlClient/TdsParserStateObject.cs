@@ -239,20 +239,26 @@ namespace Microsoft.Data.SqlClient
         internal List<string> _readLog = new List<string>(100);
 #endif
 
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), DebuggerStepThrough]
         internal void Log(string value)
         {
+#if DEBUG
             _readLog.Add(value);
+#endif
         }
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), DebuggerStepThrough]
         internal void AddRead(int count, [CallerMemberName] string by = null)
         {
+#if DEBUG
             _readLog.Add($"    ({_inBytesUsed - count}, {count}) {by}");
+#endif
         }
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), DebuggerStepThrough]
         internal void NegateRead()
         {
+#if DEBUG
             _readLog.RemoveAt(_readLog.Count - 1);
+#endif
         }
 
         // DO NOT USE THIS BUFFER FOR OTHER THINGS.
@@ -1316,7 +1322,7 @@ namespace Microsoft.Data.SqlClient
             _inBuff = buffer;
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
-            //Log(caller +"->SetBuffer");
+            //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead})");
         }
 
         internal void NewBuffer(int size)
@@ -1770,7 +1776,7 @@ namespace Microsoft.Data.SqlClient
         }
 
         // This method is safe to call when doing async without snapshot
-        internal TdsOperationStatus TryReadInt64(out long value, int caller)
+        internal TdsOperationStatus TryReadInt64(out long value)
         {
             if ((_inBytesPacket == 0) || (_inBytesUsed == _inBytesRead))
             {
@@ -2144,7 +2150,7 @@ namespace Microsoft.Data.SqlClient
             {
                 // First chunk is being read. Find out what type of chunk it is
                 long value;
-                TdsOperationStatus result = TryReadInt64(out value, 5);
+                TdsOperationStatus result = TryReadInt64(out value);
                 if (result != TdsOperationStatus.Done)
                 {
                     lengthLeft = 0;
@@ -4401,6 +4407,11 @@ namespace Microsoft.Data.SqlClient
                         _stateObj.AssertValidState();
                         return true;
                     }
+                    else
+                    {
+                        _stateObj.Log("");
+                        _stateObj.Log($"-- {caller} failed move from {_stateObj._snapshotStatus} position:{_stateObj._snapshot?._replayStateData._inBytesUsed ?? 0}, packetId:{(_stateObj._snapshotStatus != SnapshotStatus.NotActive ? _stateObj._snapshot?.GetPacketID() : -1)}");
+                    }
                 }
                 return false;
             }
@@ -4540,13 +4551,13 @@ namespace Microsoft.Data.SqlClient
                 _stateObj = null;
             }
         }
-
+#if DEBUG
         private void DumpInBuff()
         {
             string filename = $@"E:\Programming\csharp7\dev\SqlClient-Integrated\SqlBench3.0\packets\packet-{DateTime.Now:yyyyMMdd-HHmmss}.bin";
             using (FileStream writer = File.OpenWrite(filename))
             {
-                writer.Write(_inBuff, 0 ,_inBytesRead);
+                writer.Write(_inBuff, 0 , _inBytesRead);
             }
             Debug.WriteLine($"dumped packet as \"{filename}\"");
         }
@@ -4563,5 +4574,6 @@ namespace Microsoft.Data.SqlClient
             }
             Debug.WriteLine($"dumped log as \"{filename}\"");
         }
+#endif
     }
 }

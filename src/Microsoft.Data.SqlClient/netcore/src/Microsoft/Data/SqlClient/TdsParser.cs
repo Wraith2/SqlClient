@@ -2871,7 +2871,7 @@ namespace Microsoft.Data.SqlClient
 
                         if (env._newLength > 0)
                         {
-                            result = stateObj.TryReadInt64(out env._newLongValue, 1);
+                            result = stateObj.TryReadInt64(out env._newLongValue);
                             if (result != TdsOperationStatus.Done)
                             {
                                 return result;
@@ -2893,7 +2893,7 @@ namespace Microsoft.Data.SqlClient
 
                         if (env._oldLength > 0)
                         {
-                            result = stateObj.TryReadInt64(out env._oldLongValue, 2);
+                            result = stateObj.TryReadInt64(out env._oldLongValue);
                             if (result != TdsOperationStatus.Done)
                             {
                                 return result;
@@ -3121,7 +3121,7 @@ namespace Microsoft.Data.SqlClient
             }
 
             long longCount;
-            result = stateObj.TryReadInt64(out longCount, 3);
+            result = stateObj.TryReadInt64(out longCount);
             if (result != TdsOperationStatus.Done)
             {
                 return result;
@@ -6446,7 +6446,7 @@ namespace Microsoft.Data.SqlClient
                                 if (stateObj._readerState != null)
                                 {
                                     stateObj._readerState._nextColumnDataToRead++;
-                                    stateObj.Log($"SqlDataReader.TryReadSqlValue _nextColumnHeaderToRead:{stateObj._readerState._nextColumnHeaderToRead}, _nextColumnDataToRead:{stateObj._readerState._nextColumnDataToRead}");
+                                    stateObj.Log($"SqlDataReader.TryReadSqlValue _nextHeader:{stateObj._readerState._nextColumnHeaderToRead}, _nextData:{stateObj._readerState._nextColumnDataToRead}");
                                     stateObj._readerState._nextColumnDataToReadWrittenBy = (stateObj._readerState._nextColumnDataToRead, "TryReadSqlValue");
                                 }
 
@@ -6654,7 +6654,7 @@ namespace Microsoft.Data.SqlClient
                 case TdsEnums.SQLINT8:
                     Debug.Assert(length == 8, "invalid length for SqlInt64 type!");
                     long longValue;
-                    result = stateObj.TryReadInt64(out longValue, 4);
+                    result = stateObj.TryReadInt64(out longValue);
                     if (result != TdsOperationStatus.Done)
                     {
                         return result;
