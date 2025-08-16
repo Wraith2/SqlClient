@@ -1297,20 +1297,6 @@ namespace Microsoft.Data.SqlClient
             _inBuff = buffer;
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
-
-            //if (!skipCheck && buffer.Length >= TdsEnums.HEADER_LEN && inBytesRead>0)
-            //{
-            //    if (buffer[0] != 4 || buffer[1] > 1 || buffer[7] != 0 || Packet.GetDataLengthFromHeader(buffer) > 32767)
-            //    {
-            //        Debugger.Break();
-            //    }
-            //}
-
-        internal void NewBuffer(int size)
-        {
-            _inBuff = new byte[size];
-            _inBytesUsed = 0;
-            _inBytesRead = 0;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -4385,11 +4371,6 @@ namespace Microsoft.Data.SqlClient
                         _continuePacket = _current;
                     }
                 }
-            }
-
-            internal void RequestContinue(bool value)
-            {
-                _continueRequested = value;
             }
 
             internal void SetPacketDataSize(int size)

@@ -124,7 +124,7 @@ namespace Microsoft.Data.SqlClient
                                 // if some data was taken from the new packet adjust the counters
                                 if (dataSize != newDataLength || 0 != newDataOffset)
                                 {
-                                    SetBuffer(_inBuff, newDataOffset, newDataLength, "ProcessSniPacket(resize length)");
+                                    SetBuffer(_inBuff, newDataOffset, newDataLength);
                                 }
 
                             if (_snapshot != null)
@@ -138,7 +138,7 @@ namespace Microsoft.Data.SqlClient
                             }
                             else
                             {
-                                SetBuffer(_inBuff, 0, _inBytesRead, "ProcessSniPacket(use existing directly)");
+                                SetBuffer(_inBuff, 0, _inBytesRead);
                             }
                             bufferIsPartialCompleted = true;
                         }
@@ -180,7 +180,6 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_snapshotStatus != SnapshotStatus.NotActive && appended)
                         {
-                            Log($">>>  calling movenext");
                             _snapshot.MoveNext();
                         }
                     }
