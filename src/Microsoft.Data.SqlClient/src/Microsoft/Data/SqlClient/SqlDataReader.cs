@@ -4050,14 +4050,39 @@ namespace Microsoft.Data.SqlClient
                 {
                     bool isNull;
                     ulong dataLength;
-                    result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
-                    if (result != TdsOperationStatus.Done)
+                    //if (AppContext.TryGetSwitch("btmp3", out bool value) && value && _sharedState._nextColumnHeaderToRead == 8)
+                    //{
+                    //    //Debugger.Break();
+                    //}
+
+                    if (
+                        _stateObj.GetSnapshotStatuses() is {CanContinue:true, IsStarting:false } && 
+                        _stateObj.TryGetSnapshotColumnHeaderInfo() is { HasColumnHeaderInfo: true, 
+                            IsNull: var cachedIsNull,
+                            DataLength: var cachedDataLength
+                        }
+                    )
                     {
-                        return result;
+                        _stateObj.Log($"  col header {_sharedState._nextColumnHeaderToRead} fetched cached values");
+                        _stateObj.ClearSnapshotColumnHeaderInfo();
+                        isNull = cachedIsNull;
+                        dataLength = cachedDataLength;
+                        // if we have used cached data then we know that the nextColumnDataToRead and nextColumnHeaderToRead
+                        //   variables were incremented by the code that successfully read the header values, so don't increment them again
+                    }
+                    else
+                    {
+                        _stateObj.Log($"  col header {_sharedState._nextColumnHeaderToRead}, type:{columnMetaData.metaType.TypeName}");
+                        result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
+                        if (result != TdsOperationStatus.Done)
+                        {
+                            return result;
+                        }
+
+                        _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                        _sharedState._nextColumnHeaderToRead++;  // We read this one
                     }
 
-                    _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
-                    _sharedState._nextColumnHeaderToRead++;  // We read this one
 
                     // Trigger new behavior for RowVersion to send DBNull.Value by allowing entry for Timestamp or discard entry for Timestamp for legacy support.
                     // if LegacyRowVersionNullBehavior is enabled, Timestamp type must enter "else" block.
@@ -4080,14 +4105,36 @@ namespace Microsoft.Data.SqlClient
                             // If we're not in sequential access mode, we have to
                             // save the data we skip over so that the consumer
                             // can read it out of order
+                            _stateObj.Log($"  col value {_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}, dataLength:{dataLength}");
                             result = _parser.TryReadSqlValue(_data[_sharedState._nextColumnDataToRead], columnMetaData, (int)dataLength, _stateObj,
                                 _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
                                 columnMetaData.column, _command);
                             if (result != TdsOperationStatus.Done)
                             {
                                 // will read UDTs as VARBINARY.
+                                if (result == TdsOperationStatus.NeedMoreData)
+                                {
+                                    var statuses = _stateObj.GetSnapshotStatuses();
+                                    if (statuses.CanContinue)
+                                    {
+                                        // we need to save isNull and dataLength here so that if we need more data and then get it from another packet 
+                                        //  we don't re-read the column header
+                                        _stateObj.Log($"  storing column data for {_sharedState._nextColumnDataToRead}, isNull:{isNull}, dataLength:{dataLength}");
+                                        _stateObj.SetSnapshotColumnHeaderInfo(isNull, dataLength);
+                                    }
+                                    else
+                                    {
+                                        _stateObj.Log($"  NOT storing column data for {_sharedState._nextColumnDataToRead}, canContinue:{statuses.CanContinue}, isStarting:{statuses.IsStarting}, IsContinuing:{statuses.IsContinuing}");
+                                    }
+                                }
+                                else
+                                {
+                                    _stateObj.Log($"  NOT storing column data for {_sharedState._nextColumnDataToRead} error");
+                                }
+
                                 return result;
                             }
+                            _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
                             _sharedState._nextColumnDataToRead++;
                         }
                         else
@@ -4954,7 +5001,7 @@ namespace Microsoft.Data.SqlClient
                 // These variables will be captured in moreFunc so that we can skip searching for a row token once one has been read
                 bool rowTokenRead = false;
                 bool more = false;
-
+                _stateObj._readLog.Clear();
                 // Shortcut, do we have enough data to immediately do the ReadAsync?
                 try
                 {
@@ -5829,6 +5876,7 @@ namespace Microsoft.Data.SqlClient
                     _snapshot._currentStream = _currentStream;
                     _snapshot._currentTextReader = _currentTextReader;
 
+                    _stateObj.Log("PrepareAsyncInvocation");
                     _stateObj.SetSnapshot();
                 }
             }
@@ -5860,6 +5908,7 @@ namespace Microsoft.Data.SqlClient
                             Debug.Assert(_snapshot == null && !_stateObj._asyncReadWithoutSnapshot, "Snapshot not null or async without snapshot still enabled after cleaning async state");
                         }
                     }
+                    stateObj.Log("CleanupAfterAsyncInvocation");
                 }
             }
         }

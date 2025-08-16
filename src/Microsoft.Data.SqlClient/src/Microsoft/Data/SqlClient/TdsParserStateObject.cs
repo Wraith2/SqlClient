@@ -6,6 +6,8 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography;
@@ -225,6 +227,8 @@ namespace Microsoft.Data.SqlClient
         internal int[] _decimalBits;                // scratch buffer for decimal/numeric data
         internal byte[] _bTmp = new byte[TdsEnums.SQL2005_HEADER_LEN];  // Scratch buffer for misc use
         internal int _bTmpRead;                   // Counter for number of temporary bytes read
+        internal (int, int) _bTmpReadWrittenBy;
+        internal List<string> _readLog = new List<string>(100);
         internal Decoder _plpdecoder;             // Decoder object to process plp character data
         internal bool _accumulateInfoEvents;               // TRUE - accumulate info messages during TdsParser.Run, FALSE - fire them
         internal List<SqlError> _pendingInfoEvents;
@@ -232,6 +236,19 @@ namespace Microsoft.Data.SqlClient
         internal byte[] _bIntBytes;                 // scratch buffer to serialize Int values (4 bytes).
         internal byte[] _bShortBytes;                 // scratch buffer to serialize Short values (2 bytes).
         internal byte[] _bDecimalBytes;                 // scratch buffer to serialize decimal values (17 bytes).
+
+        internal void Log(string value)
+        {
+            _readLog.Add(value);
+        }
+        internal void AddRead(int count, [CallerMemberName] string by = null)
+        {
+            _readLog.Add($"    ({_inBytesUsed - count}, {count}) {by}");
+        }
+        internal void NegateRead()
+        {
+            _readLog.RemoveAt(_readLog.Count - 1);
+        }
 
         // DO NOT USE THIS BUFFER FOR OTHER THINGS.
         // ProcessHeader can be called ANYTIME while doing network reads.
@@ -256,8 +273,8 @@ namespace Microsoft.Data.SqlClient
         private Timer _networkPacketTimeout;
         internal bool _syncOverAsync = true;
         private SnapshotStatus _snapshotStatus;
-        private StateSnapshot _snapshot;
-        private StateSnapshot _cachedSnapshot;
+        internal StateSnapshot _snapshot;
+        internal StateSnapshot _cachedSnapshot;
         internal ExecutionContext _executionContext;
         internal bool _asyncReadWithoutSnapshot;
 #if DEBUG
@@ -321,7 +338,7 @@ namespace Microsoft.Data.SqlClient
 
         // Prevents any pending read from completing until the user signals it using
         // CompletePendingReadWithSuccess() or CompletePendingReadWithFailure(int errorCode) in SqlCommand\SqlDataReader
-        internal static bool s_forcePendingReadsToWaitForUser = false;
+        internal static bool s_forcePendingReadsToWaitForUser = true;
         internal TaskCompletionSource<object> _realNetworkPacketTaskSource;
 
         // Field is never assigned to, and will always have its default value
@@ -645,6 +662,7 @@ namespace Microsoft.Data.SqlClient
                     charsCopied += (bytesToRead / 2);
                     _inBytesUsed += bytesToRead;
                     _inBytesPacket -= bytesToRead;
+                    AddRead(bytesToRead);
                 }
 
                 // if the number of chars requested is lower than the number copied then we need
@@ -704,7 +722,7 @@ namespace Microsoft.Data.SqlClient
             return _nullBitmapInfo.IsGuaranteedNull(columnOrdinal);
         }
 
-        private struct NullBitmap
+        internal struct NullBitmap
         {
             private byte[] _nullBitmap;
             private int _columnsCount; // set to 0 if not used or > 0 for NBC rows
@@ -1216,6 +1234,7 @@ namespace Microsoft.Data.SqlClient
                     Buffer.BlockCopy(_inBuff, _inBytesUsed, _partialHeaderBuffer, _partialHeaderBytesRead, copy);
                     _partialHeaderBytesRead += copy;
                     _inBytesUsed += copy;
+                    AddRead(copy);
 
                     Debug.Assert(_partialHeaderBytesRead <= _inputHeaderLen, "Read more bytes for header than required");
                     if (_partialHeaderBytesRead == _inputHeaderLen)
@@ -1225,6 +1244,7 @@ namespace Microsoft.Data.SqlClient
                         _partialHeaderBytesRead = 0;
                         _messageStatus = Packet.GetStatusFromHeader(header);
                         _inBytesPacket = Packet.GetDataLengthFromHeader(header);
+                        AddRead(_inBytesPacket, "TryProcessHeader-HeaderPartial");
                         _spid = Packet.GetSpidFromHeader(header);
 
                         SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.TryProcessHeader | ADV | State Object Id {0}, Client Connection Id {1}, Server process Id (SPID) {2}", _objectID, _parser?.Connection?.ClientConnectionId, _spid);
@@ -1269,7 +1289,7 @@ namespace Microsoft.Data.SqlClient
                 SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.TryProcessHeader | ADV | State Object Id {0}, Client Connection Id {1}, Server process Id (SPID) {2}", _objectID, _parser?.Connection?.ClientConnectionId, _spid);
 #endif
                 _inBytesUsed += _inputHeaderLen;
-
+                AddRead(8, "TryProcessHeader-HeaderNormal");
                 AssertValidState();
             }
 
@@ -1286,11 +1306,12 @@ namespace Microsoft.Data.SqlClient
             return TdsOperationStatus.Done;
         }
 
-        internal void SetBuffer(byte[] buffer, int inBytesUsed, int inBytesRead/*, [CallerMemberName] string caller = null*/)
+        internal void SetBuffer(byte[] buffer, int inBytesUsed, int inBytesRead, [CallerMemberName] string caller = null)
         {
             _inBuff = buffer;
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
+            Log(caller +"->SetBuffer");
         }
 
         internal void NewBuffer(int size)
@@ -1475,26 +1496,26 @@ namespace Microsoft.Data.SqlClient
             // now do fixup
             _inBytesPacket++;
             _inBytesUsed--;
-
+            NegateRead();
             AssertValidState();
             return TdsOperationStatus.Done;
         }
 
         // Takes a byte array, an offset, and a len and fills the array from the offset to len number of
         // bytes from the in buffer.
-        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len)
+        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len, [CallerMemberName] string caller = null)
         {
-            return TryReadByteArray(buff, len, out _, 0, false);
+            return TryReadByteArray(buff, len, out _, 0, false, caller);
         }
 
-        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len, out int totalRead)
+        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len, out int totalRead, [CallerMemberName] string caller = null)
         {
-            return TryReadByteArray(buff, len, out totalRead, 0, false);
+            return TryReadByteArray(buff, len, out totalRead, 0, false, caller);
         }
 
         // NOTE: This method must be retriable WITHOUT replaying a snapshot
         // Every time you call this method increment the offset and decrease len by the value of totalRead
-        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len, out int totalRead, int startOffset, bool writeDataSizeToSnapshot)
+        public TdsOperationStatus TryReadByteArray(Span<byte> buff, int len, out int totalRead, int startOffset, bool writeDataSizeToSnapshot, [CallerMemberName] string caller = null)
         {
             totalRead = 0;
 
@@ -1547,6 +1568,7 @@ namespace Microsoft.Data.SqlClient
                 totalRead += bytesToRead;
                 _inBytesUsed += bytesToRead;
                 _inBytesPacket -= bytesToRead;
+                AddRead(bytesToRead, caller + "->" + nameof(TryReadByteArray));
                 len -= bytesToRead;
 
                 if (writeDataSizeToSnapshot)
@@ -1603,7 +1625,7 @@ namespace Microsoft.Data.SqlClient
 
         // Takes no arguments and returns a byte from the buffer.  If the buffer is empty, it is filled
         // before the byte is returned.
-        internal TdsOperationStatus TryReadByte(out byte value)
+        internal TdsOperationStatus TryReadByte(out byte value, [CallerMemberName] string caller = null )
         {
             Debug.Assert(_inBytesUsed >= 0 && _inBytesUsed <= _inBytesRead, "ERROR - TDSParser: _inBytesUsed < 0 or _inBytesUsed > _inBytesRead");
             value = 0;
@@ -1643,6 +1665,7 @@ namespace Microsoft.Data.SqlClient
 
             // return the byte from the buffer and increment the counter for number of bytes used in the in buffer
             value = (_inBuff[_inBytesUsed++]);
+            AddRead(1, caller + "->TryReadByte");
 
             AssertValidState();
             return TdsOperationStatus.Done;
@@ -1671,6 +1694,7 @@ namespace Microsoft.Data.SqlClient
                 buffer = _inBuff.AsSpan(_inBytesUsed, 2);
                 _inBytesUsed += 2;
                 _inBytesPacket -= 2;
+                AddRead(2);
             }
 
             AssertValidState();
@@ -1702,6 +1726,7 @@ namespace Microsoft.Data.SqlClient
                 buffer = _inBuff.AsSpan(_inBytesUsed, 2);
                 _inBytesUsed += 2;
                 _inBytesPacket -= 2;
+                AddRead(2);
             }
 
             AssertValidState();
@@ -1731,6 +1756,7 @@ namespace Microsoft.Data.SqlClient
                 buffer = _inBuff.AsSpan(_inBytesUsed, 4);
                 _inBytesUsed += 4;
                 _inBytesPacket -= 4;
+                AddRead(4);
             }
 
             AssertValidState();
@@ -1739,7 +1765,7 @@ namespace Microsoft.Data.SqlClient
         }
 
         // This method is safe to call when doing async without snapshot
-        internal TdsOperationStatus TryReadInt64(out long value)
+        internal TdsOperationStatus TryReadInt64(out long value, int caller)
         {
             if ((_inBytesPacket == 0) || (_inBytesUsed == _inBytesRead))
             {
@@ -1760,15 +1786,19 @@ namespace Microsoft.Data.SqlClient
                 TdsOperationStatus result = TryReadByteArray(_bTmp.AsSpan(start: _bTmpRead), 8 - _bTmpRead, out bytesRead);
                 if (result != TdsOperationStatus.Done)
                 {
+                    Log($"  partial read started, have:{bytesRead}, needed:{8 - bytesRead}");
                     Debug.Assert(_bTmpRead + bytesRead <= 8, "Read more data than required");
                     _bTmpRead += bytesRead;
+                    _bTmpReadWrittenBy = (1, bytesRead);
                     value = 0;
                     return result;
                 }
                 else
                 {
+                    Log($"  partial read completed, needed:{8 - bytesRead}, total:8");
                     Debug.Assert(_bTmpRead + bytesRead == 8, "TryReadByteArray returned true without reading all data required");
                     _bTmpRead = 0;
+                    _bTmpReadWrittenBy = (2, 0);
                     AssertValidState();
                     value = BinaryPrimitives.ReadInt64LittleEndian(_bTmp);
                     return TdsOperationStatus.Done;
@@ -1783,6 +1813,7 @@ namespace Microsoft.Data.SqlClient
 
                 _inBytesUsed += 8;
                 _inBytesPacket -= 8;
+                AddRead(8);
 
                 AssertValidState();
                 return TdsOperationStatus.Done;
@@ -1812,6 +1843,7 @@ namespace Microsoft.Data.SqlClient
                 buffer = _inBuff.AsSpan(_inBytesUsed, 2);
                 _inBytesUsed += 2;
                 _inBytesPacket -= 2;
+                AddRead(2);
             }
 
             AssertValidState();
@@ -1841,15 +1873,23 @@ namespace Microsoft.Data.SqlClient
                 TdsOperationStatus result = TryReadByteArray(_bTmp.AsSpan(start: _bTmpRead), 4 - _bTmpRead, out bytesRead);
                 if (result != TdsOperationStatus.Done)
                 {
+                    Log($"  partial read started, have:{bytesRead}, needed:{4 - bytesRead}");
                     Debug.Assert(_bTmpRead + bytesRead <= 4, "Read more data than required");
                     _bTmpRead += bytesRead;
+                    _bTmpReadWrittenBy = (3, bytesRead);
+                    //if (_bTmpRead == 3)
+                    //{
+                    //    AppContext.SetSwitch("btmp3", true);
+                    //}
                     value = 0;
                     return result;
                 }
                 else
                 {
+                    Log($"  partial read completed, needed:{4 - bytesRead}, total:4");
                     Debug.Assert(_bTmpRead + bytesRead == 4, "TryReadByteArray returned true without reading all data required");
                     _bTmpRead = 0;
+                    _bTmpReadWrittenBy = (4, 0);
                     AssertValidState();
                     value = BinaryPrimitives.ReadUInt32LittleEndian(_bTmp);
                     return TdsOperationStatus.Done;
@@ -1864,7 +1904,7 @@ namespace Microsoft.Data.SqlClient
 
                 _inBytesUsed += 4;
                 _inBytesPacket -= 4;
-
+                AddRead(4);
                 AssertValidState();
                 return TdsOperationStatus.Done;
             }
@@ -1898,7 +1938,7 @@ namespace Microsoft.Data.SqlClient
 
                 _inBytesUsed += 4;
                 _inBytesPacket -= 4;
-
+                AddRead(4);
                 AssertValidState();
                 return TdsOperationStatus.Done;
             }
@@ -1932,7 +1972,7 @@ namespace Microsoft.Data.SqlClient
 
                 _inBytesUsed += 8;
                 _inBytesPacket -= 8;
-
+                AddRead(8);
                 AssertValidState();
                 return TdsOperationStatus.Done;
             }
@@ -1963,7 +2003,7 @@ namespace Microsoft.Data.SqlClient
                 offset = _inBytesUsed;
                 _inBytesUsed += cBytes;
                 _inBytesPacket -= cBytes;
-
+                AddRead(cBytes);
                 AssertValidState();
             }
 
@@ -2060,6 +2100,7 @@ namespace Microsoft.Data.SqlClient
                     // assign local to point to _inBuff
                     buf = _inBuff;
                     offset = _inBytesUsed;
+                    AddRead(length);
                     _inBytesUsed += length;
                     _inBytesPacket -= length;
 
@@ -2102,7 +2143,7 @@ namespace Microsoft.Data.SqlClient
             {
                 // First chunk is being read. Find out what type of chunk it is
                 long value;
-                TdsOperationStatus result = TryReadInt64(out value);
+                TdsOperationStatus result = TryReadInt64(out value, 5);
                 if (result != TdsOperationStatus.Done)
                 {
                     lengthLeft = 0;
@@ -2122,6 +2163,10 @@ namespace Microsoft.Data.SqlClient
             {
                 // Data is coming in uint chunks, read length of next chunk
                 TdsOperationStatus result = TryReadUInt32(out chunklen);
+                if (chunklen > 12000)
+                {
+                    Debugger.Break(); // row 441, 500, 381, 350
+                }
                 if (result != TdsOperationStatus.Done)
                 {
                     lengthLeft = 0;
@@ -2275,9 +2320,21 @@ namespace Microsoft.Data.SqlClient
                 int bytesToRead = (int)Math.Min(_longlenleft, (ulong)bytesLeft);
                 if (buff.Length < (offset + bytesToRead))
                 {
+                    if (offset > 12000 || bytesToRead > 12000)
+                    {
+                        Debugger.Break();
+                    }
                     // Grow the array
+                    Thread.MemoryBarrier();
                     byte[] newbuf = new byte[offset + bytesToRead];
-                    Buffer.BlockCopy(buff, 0, newbuf, 0, offset);
+                    try
+                    {
+                        Buffer.BlockCopy(buff, 0, newbuf, 0, offset);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(ex.Message);
+                    }
                     buff = newbuf;
                     newbuf = null;
                 }
@@ -3580,6 +3637,7 @@ namespace Microsoft.Data.SqlClient
             Debug.Assert(_snapshot._storage == null);
             _snapshot.CaptureAsStart(this);
             _snapshotStatus = SnapshotStatus.NotActive;
+            Log($"CaptureAsStart status:{SnapshotStatus.NotActive}, position:{_snapshot._replayStateData._inBytesUsed}");
         }
 
         internal void ResetSnapshot()
@@ -3592,6 +3650,7 @@ namespace Microsoft.Data.SqlClient
                 Interlocked.CompareExchange(ref _cachedSnapshot, snapshot, null);
             }
             _snapshotStatus = SnapshotStatus.NotActive;
+            Log($"ResetSnapshot status:{SnapshotStatus.NotActive}");
         }
 
         internal bool IsSnapshotAvailable()
@@ -3648,6 +3707,38 @@ namespace Microsoft.Data.SqlClient
             if (_snapshot != null)
             {
                 _snapshot._storage = buffer;
+            }
+        }
+
+        internal void SetSnapshotColumnHeaderInfo(bool isNull, ulong dataLength)
+        {
+            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
+            if (_snapshot != null)
+            {
+                _snapshot._hasColumnHeaderInfo = true;
+                _snapshot._isNull = isNull;
+                _snapshot._dataLength = dataLength;
+            }
+        }
+
+        internal (bool HasColumnHeaderInfo, bool IsNull, ulong DataLength) TryGetSnapshotColumnHeaderInfo()
+        {
+            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
+            if (_snapshot != null)
+            {
+                return (_snapshot._hasColumnHeaderInfo, _snapshot._isNull, _snapshot._dataLength);
+            }
+            return (false, false, 0);
+        }
+
+        internal void ClearSnapshotColumnHeaderInfo()
+        {
+            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
+            if (_snapshot != null)
+            {
+                _snapshot._hasColumnHeaderInfo = false;
+                _snapshot._isNull = false;
+                _snapshot._dataLength = 0;
             }
         }
 
@@ -4054,10 +4145,10 @@ namespace Microsoft.Data.SqlClient
             }
 #endif
 
-            private sealed class StateObjectData
+            internal sealed class StateObjectData
             {
-                private int _inBytesUsed;
-                private int _inBytesPacket;
+                internal int _inBytesUsed;
+                internal int _inBytesPacket;
                 private byte _messageStatus;
                 internal NullBitmap _nullBitmapInfo;
                 private _SqlMetaDataSet _cleanupMetaData;
@@ -4106,9 +4197,10 @@ namespace Microsoft.Data.SqlClient
 #endif
                 }
 
-                internal void Restore(TdsParserStateObject stateObj)
+                internal void Restore(TdsParserStateObject stateObj, bool clearTemps)
                 {
                     stateObj._inBytesUsed = _inBytesUsed;
+                    stateObj.Log($"Restore(clearTemps:{clearTemps})");
                     stateObj._inBytesPacket = _inBytesPacket;
                     stateObj._messageStatus = _messageStatus;
                     stateObj._nullBitmapInfo = _nullBitmapInfo;
@@ -4131,15 +4223,19 @@ namespace Microsoft.Data.SqlClient
                     stateObj._longlen = _longLen;
                     stateObj._longlenleft = _longLenLeft;
 
-                    // Reset partially read state (these only need to be maintained if doing async without snapshot)
-                    stateObj._bTmpRead = 0;
+                    if (clearTemps)
+                    {
+                        // Reset partially read state (these only need to be maintained if doing async without snapshot)
+                        stateObj._bTmpRead = 0;
+                        //stateObj._bTmpReadWrittenBy = (5, 0);
+                    }
                     stateObj._partialHeaderBytesRead = 0;
                 }
             }
 
             private TdsParserStateObject _stateObj;
-            private StateObjectData _replayStateData;
-            private StateObjectData _continueStateData;
+            internal StateObjectData _replayStateData;
+            internal StateObjectData _continueStateData;
 
             internal object _storage;
             internal bool _continueRequested;
@@ -4271,6 +4367,7 @@ namespace Microsoft.Data.SqlClient
                 {
                     _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                     _stateObj._snapshotStatus = moveToMode;
+                    _stateObj.Log($"moved to {moveToMode}");
                     retval = true;
                 }
 
@@ -4282,7 +4379,7 @@ namespace Microsoft.Data.SqlClient
                 // go back to the beginning
                 _current = null;
                 MoveNext();
-                _replayStateData.Restore(_stateObj);
+                _replayStateData.Restore(_stateObj, clearTemps: true);
                 _stateObj.AssertValidState();
             }
 
@@ -4292,9 +4389,15 @@ namespace Microsoft.Data.SqlClient
                 {
                     if (_continuePacket != null && _continuePacket != _current)
                     {
-                        _continueStateData.Restore(_stateObj);
+                        //Debug.Assert(_stateObj._bTmpRead == 0);
+                        if (_stateObj._bTmpRead > 0)
+                        {
+                            AppContext.SetSwitch("btmp", true);
+                        }
+                        _continueStateData.Restore(_stateObj, clearTemps: false);
                         _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                         _stateObj._snapshotStatus = SnapshotStatus.ContinueRunning;
+                        _stateObj.Log($"moved to {SnapshotStatus.ContinueRunning}");
                         _stateObj.AssertValidState();
                         return true;
                     }
@@ -4436,6 +4539,29 @@ namespace Microsoft.Data.SqlClient
 #endif
                 _stateObj = null;
             }
+        }
+
+        private void DumpInBuff()
+        {
+            string filename = $@"E:\Programming\csharp7\dev\SqlClient-Integrated\SqlBench3.0\packets\packet-{DateTime.Now:yyyyMMdd-HHmmss}.bin";
+            using (FileStream writer = File.OpenWrite(filename))
+            {
+                writer.Write(_inBuff, 0 ,_inBytesRead);
+            }
+            Debug.WriteLine($"dumped packet as \"{filename}\"");
+        }
+
+        private void DumpLog()
+        {
+            string filename = $@"E:\Programming\csharp7\dev\SqlClient-Integrated\SqlBench3.0\packets\log-{DateTime.Now:yyyyMMdd-HHmmss}.log";
+            using (var writer = new StreamWriter(File.OpenWrite(filename)))
+            {
+                foreach (var line in _readLog)
+                {
+                    writer.WriteLine(line);
+                }
+            }
+            Debug.WriteLine($"dumped log as \"{filename}\"");
         }
     }
 }
