@@ -3916,197 +3916,130 @@ namespace Microsoft.Data.SqlClient
 
         internal TdsOperationStatus TryReadColumnInternal(int i, bool readHeaderOnly = false, bool forStreaming = false)
         {
-            _stateObj.Log($"TryReadColumnInternal(i:{i}) begin");
-            _stateObj.LogIndent();
-            try
+            AssertReaderState(requireData: true, permitAsync: true, columnIndex: i);
+
+            // Check if we've already read the header already
+            if (i < _sharedState._nextColumnHeaderToRead)
             {
-                AssertReaderState(requireData: true, permitAsync: true, columnIndex: i);
-
-                // Check if we've already read the header already
-                if (i < _sharedState._nextColumnHeaderToRead)
+                // Read the header, but we need to read the data
+                if ((i == _sharedState._nextColumnDataToRead) && (!readHeaderOnly))
                 {
-                    // Read the header, but we need to read the data
-                    if ((i == _sharedState._nextColumnDataToRead) && (!readHeaderOnly))
-                    {
-                        return TryReadColumnData();
-                    }
-                    // Else we've already read the data, or we're reading the header only
-                    else
-                    {
-                        // Ensure that, if we've read past the column, then we did store its data
-                        Debug.Assert(i == _sharedState._nextColumnDataToRead ||                                                          // Either we haven't read the column yet
-                            ((i + 1 < _sharedState._nextColumnDataToRead) && (IsCommandBehavior(CommandBehavior.SequentialAccess))) ||   // Or we're in sequential mode and we've read way past the column (i.e. it was not the last column we read)
-                            (!_data[i].IsEmpty || _data[i].IsNull) ||                                                       // Or we should have data stored for the column (unless the column was null)
-                            (_metaData[i].type == SqlDbType.Timestamp),                                                     // Or Dev11 Bug #336820, Dev10 Bug #479607 (SqlClient: IsDBNull always returns false for timestamp datatype)
-                                                                                                                            //    Due to a bug in TdsParser.GetNullSqlValue, Timestamps' IsNull is not correctly set - so we need to bypass the check
-                            "Gone past column, be we have no data stored for it");
-                        return TdsOperationStatus.Done;
-                    }
+                    return TryReadColumnData();
+                }
+                // Else we've already read the data, or we're reading the header only
+                else
+                {
+                    // Ensure that, if we've read past the column, then we did store its data
+                    Debug.Assert(i == _sharedState._nextColumnDataToRead ||                                                          // Either we haven't read the column yet
+                        ((i + 1 < _sharedState._nextColumnDataToRead) && (IsCommandBehavior(CommandBehavior.SequentialAccess))) ||   // Or we're in sequential mode and we've read way past the column (i.e. it was not the last column we read)
+                        (!_data[i].IsEmpty || _data[i].IsNull) ||                                                       // Or we should have data stored for the column (unless the column was null)
+                        (_metaData[i].type == SqlDbType.Timestamp),                                                     // Or Dev11 Bug #336820, Dev10 Bug #479607 (SqlClient: IsDBNull always returns false for timestamp datatype)
+                                                                                                                        //    Due to a bug in TdsParser.GetNullSqlValue, Timestamps' IsNull is not correctly set - so we need to bypass the check
+                        "Gone past column, be we have no data stored for it");
+                    return TdsOperationStatus.Done;
+                }
+            }
+
+            Debug.Assert(_data[i].IsEmpty || _data[i].IsNull, "re-reading column value?");
+
+            // If we're in sequential access mode, we can safely clear out any
+            // data from the previous column.
+            TdsOperationStatus result;
+            bool isSequentialAccess = IsCommandBehavior(CommandBehavior.SequentialAccess);
+            if (isSequentialAccess)
+            {
+                if (0 < _sharedState._nextColumnDataToRead)
+                {
+                    _data[_sharedState._nextColumnDataToRead - 1].Clear();
                 }
 
-                Debug.Assert(_data[i].IsEmpty || _data[i].IsNull, "re-reading column value?");
-
-                // If we're in sequential access mode, we can safely clear out any
-                // data from the previous column.
-                TdsOperationStatus result;
-                bool isSequentialAccess = IsCommandBehavior(CommandBehavior.SequentialAccess);
-                if (isSequentialAccess)
+                // Only wipe out the blob objects if they aren't for a 'future' column (i.e. we haven't read up to them yet)
+                if ((_lastColumnWithDataChunkRead > -1) && (i > _lastColumnWithDataChunkRead))
                 {
-                    if (0 < _sharedState._nextColumnDataToRead)
-                    {
-                        _data[_sharedState._nextColumnDataToRead - 1].Clear();
-                    }
-
-                    // Only wipe out the blob objects if they aren't for a 'future' column (i.e. we haven't read up to them yet)
-                    if ((_lastColumnWithDataChunkRead > -1) && (i > _lastColumnWithDataChunkRead))
-                    {
-                        CloseActiveSequentialStreamAndTextReader();
-                    }
+                    CloseActiveSequentialStreamAndTextReader();
                 }
-                else if (_sharedState._nextColumnDataToRead < _sharedState._nextColumnHeaderToRead)
-                {
-                    // We read the header but not the column for the previous column
-                    result = TryReadColumnData();
-                    if (result != TdsOperationStatus.Done)
-                    {
-                        return result;
-                    }
-                    Debug.Assert(_sharedState._nextColumnDataToRead == _sharedState._nextColumnHeaderToRead);
-                }
-
-                // if we still have bytes left from the previous blob read, clear the wire and reset
-                result = TryResetBlobState();
+            }
+            else if (_sharedState._nextColumnDataToRead < _sharedState._nextColumnHeaderToRead)
+            {
+                // We read the header but not the column for the previous column
+                result = TryReadColumnData();
                 if (result != TdsOperationStatus.Done)
                 {
                     return result;
                 }
+                Debug.Assert(_sharedState._nextColumnDataToRead == _sharedState._nextColumnHeaderToRead);
+            }
 
-                do
+            // if we still have bytes left from the previous blob read, clear the wire and reset
+            result = TryResetBlobState();
+            if (result != TdsOperationStatus.Done)
+            {
+                return result;
+            }
+
+            do
+            {
+                _SqlMetaData columnMetaData = _metaData[_sharedState._nextColumnHeaderToRead];
+
+                if (isSequentialAccess)
                 {
-                    _SqlMetaData columnMetaData = _metaData[_sharedState._nextColumnHeaderToRead];
-
-                    if (isSequentialAccess)
+                    if (_sharedState._nextColumnHeaderToRead < i)
                     {
-                        if (_sharedState._nextColumnHeaderToRead < i)
+                        // SkipValue is no-op if the column appears in NBC bitmask
+                        // if not, it skips regular and PLP types
+                        result = _parser.TrySkipValue(columnMetaData, _sharedState._nextColumnHeaderToRead, _stateObj);
+                        if (result != TdsOperationStatus.Done)
                         {
-                            // SkipValue is no-op if the column appears in NBC bitmask
-                            // if not, it skips regular and PLP types
-                            result = _parser.TrySkipValue(columnMetaData, _sharedState._nextColumnHeaderToRead, _stateObj);
-                            if (result != TdsOperationStatus.Done)
-                            {
-                                return result;
-                            }
-
-                            _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
-                            _stateObj.Log($"  TryReadColumnInternal 1 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
-                            _sharedState._nextColumnHeaderToRead++;
+                            return result;
                         }
-                        else if (_sharedState._nextColumnHeaderToRead == i)
-                        {
-                            Debug.Assert(_sharedState._nextColumnHeaderToRead == _sharedState._nextColumnDataToRead, "header and data values must be in sync");
-                            bool isNull;
-                            ulong dataLength;
-                            result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
-                            if (result != TdsOperationStatus.Done)
-                            {
-                                return result;
-                            }
 
-                            _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
-                            _stateObj.Log($"  TryReadColumnInternal 2 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
-                            _sharedState._nextColumnHeaderToRead++;  // We read this one
-                            _sharedState._columnDataBytesRemaining = (long)dataLength;
-
-                            if (isNull)
-                            {
-                                if (columnMetaData.type != SqlDbType.Timestamp)
-                                {
-                                    TdsParser.GetNullSqlValue(_data[_sharedState._nextColumnDataToRead],
-                                        columnMetaData,
-                                        _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
-                                        _parser.Connection);
-                                }
-                            }
-                            else
-                            {
-                                if (!readHeaderOnly && !forStreaming)
-                                {
-                                    // If we're in sequential mode try to read the data and then if it succeeds update shared
-                                    // state so there are no remaining bytes and advance the next column to read
-                                    result = _parser.TryReadSqlValue(_data[_sharedState._nextColumnDataToRead], columnMetaData, (int)dataLength, _stateObj,
-                                        _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
-                                        columnMetaData.column);
-                                    if (result != TdsOperationStatus.Done)
-                                    {
-                                        // will read UDTs as VARBINARY.
-                                        return result;
-                                    }
-                                    _sharedState._columnDataBytesRemaining = 0;
-                                    _sharedState._nextColumnDataToRead++;
-                                    _stateObj.Log($"  TryReadColumnInternal 3 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
-                                }
-                                else
-                                {
-                                    _sharedState._columnDataBytesRemaining = (long)dataLength;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            Debug.Assert(false, "We have read past the column somehow, this is an error");
-                        }
+                        _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                        _stateObj.Log($"  TryReadColumnInternal 1 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
+                        _sharedState._nextColumnHeaderToRead++;
                     }
-                    else
+                    else if (_sharedState._nextColumnHeaderToRead == i)
                     {
+                        Debug.Assert(_sharedState._nextColumnHeaderToRead == _sharedState._nextColumnDataToRead, "header and data values must be in sync");
                         bool isNull;
                         ulong dataLength;
-
-                        _stateObj.Log($"  col header _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}");
                         result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
                         if (result != TdsOperationStatus.Done)
                         {
                             return result;
                         }
 
-                        _stateObj.Log($"  increment col after header read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
                         _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                        _stateObj.Log($"  TryReadColumnInternal 2 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
                         _sharedState._nextColumnHeaderToRead++;  // We read this one
+                        _sharedState._columnDataBytesRemaining = (long)dataLength;
 
-                        // Trigger new behavior for RowVersion to send DBNull.Value by allowing entry for Timestamp or discard entry for Timestamp for legacy support.
-                        // if LegacyRowVersionNullBehavior is enabled, Timestamp type must enter "else" block.
-                        if (isNull && (!LocalAppContextSwitches.LegacyRowVersionNullBehavior || columnMetaData.type != SqlDbType.Timestamp))
+                        if (isNull)
                         {
-                            TdsParser.GetNullSqlValue(_data[_sharedState._nextColumnDataToRead],
+                            if (columnMetaData.type != SqlDbType.Timestamp)
+                            {
+                                TdsParser.GetNullSqlValue(_data[_sharedState._nextColumnDataToRead],
                                     columnMetaData,
                                     _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
                                     _parser.Connection);
-
-                            if (!readHeaderOnly)
-                            {
-                                _sharedState._nextColumnDataToRead++;
-                                _stateObj.Log($"  increment col after null read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
-                                _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
                             }
                         }
                         else
                         {
-                            if ((i > _sharedState._nextColumnDataToRead) || (!readHeaderOnly))
+                            if (!readHeaderOnly && !forStreaming)
                             {
-                                // If we're not in sequential access mode, we have to
-                                // save the data we skip over so that the consumer
-                                // can read it out of order
-                                _stateObj.Log($"  col value {_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}, dataLength:{dataLength}");
+                                // If we're in sequential mode try to read the data and then if it succeeds update shared
+                                // state so there are no remaining bytes and advance the next column to read
                                 result = _parser.TryReadSqlValue(_data[_sharedState._nextColumnDataToRead], columnMetaData, (int)dataLength, _stateObj,
                                     _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
-                                    columnMetaData.column, _command);
+                                    columnMetaData.column);
                                 if (result != TdsOperationStatus.Done)
                                 {
                                     // will read UDTs as VARBINARY.
-                                    _stateObj.Log($"  col needs more data {_sharedState._nextColumnDataToRead}");
                                     return result;
                                 }
-                                _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
+                                _sharedState._columnDataBytesRemaining = 0;
                                 _sharedState._nextColumnDataToRead++;
+                                _stateObj.Log($"  TryReadColumnInternal 3 _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}");
                             }
                             else
                             {
@@ -4114,27 +4047,84 @@ namespace Microsoft.Data.SqlClient
                             }
                         }
                     }
-
-                    if (_snapshot != null)
+                    else
                     {
-                        // reset snapshot to save memory use.  We can safely do that here because all SqlDataReader values are stable.
-                        // The retry logic can use the current values to get back to the right state.
-                        if (_connection?.InnerConnection is SqlInternalConnection sqlInternalConnection && sqlInternalConnection.CachedDataReaderSnapshot is null)
-                        {
-                            sqlInternalConnection.CachedDataReaderSnapshot = _snapshot;
-                        }
-                        _snapshot = null;
-                        PrepareAsyncInvocation(useSnapshot: true);
+                        Debug.Assert(false, "We have read past the column somehow, this is an error");
                     }
-                } while (_sharedState._nextColumnHeaderToRead <= i);
+                }
+                else
+                {
+                    bool isNull;
+                    ulong dataLength;
 
-                return TdsOperationStatus.Done;
-            }
-            finally
-            {
-                _stateObj.LogDeIndent();
-                _stateObj.Log($"TryReadColumnInternal(i:{i}) end");
-            }
+                    _stateObj.Log($"  col header _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}");
+                    result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
+                    if (result != TdsOperationStatus.Done)
+                    {
+                        return result;
+                    }
+
+                    _stateObj.Log($"  increment col after header read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                    _sharedState._nextColumnDataToRead = _sharedState._nextColumnHeaderToRead;
+                    _sharedState._nextColumnHeaderToRead++;  // We read this one
+
+                    // Trigger new behavior for RowVersion to send DBNull.Value by allowing entry for Timestamp or discard entry for Timestamp for legacy support.
+                    // if LegacyRowVersionNullBehavior is enabled, Timestamp type must enter "else" block.
+                    if (isNull && (!LocalAppContextSwitches.LegacyRowVersionNullBehavior || columnMetaData.type != SqlDbType.Timestamp))
+                    {
+                        TdsParser.GetNullSqlValue(_data[_sharedState._nextColumnDataToRead],
+                                columnMetaData,
+                                _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
+                                _parser.Connection);
+
+                        if (!readHeaderOnly)
+                        {
+                            _sharedState._nextColumnDataToRead++;
+                            _stateObj.Log($"  increment col after null read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                            _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
+                        }
+                    }
+                    else
+                    {
+                        if ((i > _sharedState._nextColumnDataToRead) || (!readHeaderOnly))
+                        {
+                            // If we're not in sequential access mode, we have to
+                            // save the data we skip over so that the consumer
+                            // can read it out of order
+                            _stateObj.Log($"  col value {_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}, dataLength:{dataLength}");
+                            result = _parser.TryReadSqlValue(_data[_sharedState._nextColumnDataToRead], columnMetaData, (int)dataLength, _stateObj,
+                                _command != null ? _command.ColumnEncryptionSetting : SqlCommandColumnEncryptionSetting.UseConnectionSetting,
+                                columnMetaData.column, _command);
+                            if (result != TdsOperationStatus.Done)
+                            {
+                                // will read UDTs as VARBINARY.
+                                _stateObj.Log($"  col needs more data {_sharedState._nextColumnDataToRead}");
+                                return result;
+                            }
+                            _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
+                            _sharedState._nextColumnDataToRead++;
+                        }
+                        else
+                        {
+                            _sharedState._columnDataBytesRemaining = (long)dataLength;
+                        }
+                    }
+                }
+
+                if (_snapshot != null)
+                {
+                    // reset snapshot to save memory use.  We can safely do that here because all SqlDataReader values are stable.
+                    // The retry logic can use the current values to get back to the right state.
+                    if (_connection?.InnerConnection is SqlInternalConnection sqlInternalConnection && sqlInternalConnection.CachedDataReaderSnapshot is null)
+                    {
+                        sqlInternalConnection.CachedDataReaderSnapshot = _snapshot;
+                    }
+                    _snapshot = null;
+                    PrepareAsyncInvocation(useSnapshot: true);
+                }
+            } while (_sharedState._nextColumnHeaderToRead <= i);
+
+            return TdsOperationStatus.Done;
         }
 
         // Estimates if there is enough data available to read the number of columns requested

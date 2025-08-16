@@ -4375,7 +4375,7 @@ namespace Microsoft.Data.SqlClient
             // for now we coerce return values into a SQLVariant, not good...
             bool isNull = false;
             ulong valLen;
-            result = TryProcessColumnHeaderNoNBC(rec, stateObj,-1, out isNull, out valLen);
+            result = TryProcessColumnHeaderNoNBC(rec, stateObj, out isNull, out valLen);
             if (result != TdsOperationStatus.Done)
             {
                 return result;
@@ -5555,10 +5555,10 @@ namespace Microsoft.Data.SqlClient
                 return TdsOperationStatus.Done;
             }
 
-            return TryProcessColumnHeaderNoNBC(col, stateObj, columnOrdinal, out isNull, out length);
+            return TryProcessColumnHeaderNoNBC(col, stateObj, out isNull, out length);
         }
 
-        private TdsOperationStatus TryProcessColumnHeaderNoNBC(SqlMetaDataPriv col, TdsParserStateObject stateObj, int columnOrdinal, out bool isNull, out ulong length)
+        private TdsOperationStatus TryProcessColumnHeaderNoNBC(SqlMetaDataPriv col, TdsParserStateObject stateObj, out bool isNull, out ulong length)
         {
             if (col.metaType.IsLong && !col.metaType.IsPlp)
             {
@@ -5601,7 +5601,7 @@ namespace Microsoft.Data.SqlClient
                     }
 
                     isNull = false;
-                    return TryGetDataLength(col, stateObj, out length, columnOrdinal);
+                    return TryGetDataLength(col, stateObj, out length);
                 }
                 else
                 {
@@ -5614,7 +5614,7 @@ namespace Microsoft.Data.SqlClient
             {
                 // non-blob columns
                 ulong longlen;
-                TdsOperationStatus result = TryGetDataLength(col, stateObj, out longlen, columnOrdinal);
+                TdsOperationStatus result = TryGetDataLength(col, stateObj, out longlen);
                 if (result != TdsOperationStatus.Done)
                 {
                     isNull = false;
@@ -8010,7 +8010,7 @@ namespace Microsoft.Data.SqlClient
         // Returns the data stream length of the data identified by tds type or SqlMetaData returns
         // Returns either the total size or the size of the first chunk for partially length prefixed types.
         //
-        internal TdsOperationStatus TryGetDataLength(SqlMetaDataPriv colmeta, TdsParserStateObject stateObj, out ulong length, int columnOrdinal = -1)
+        internal TdsOperationStatus TryGetDataLength(SqlMetaDataPriv colmeta, TdsParserStateObject stateObj, out ulong length)
         {
             // Handle 2005 specific tokens
             if (colmeta.metaType.IsPlp)
@@ -8028,7 +8028,7 @@ namespace Microsoft.Data.SqlClient
             else
             {
                 int intLength;
-                TdsOperationStatus result = TryGetTokenLength(colmeta.tdsType, stateObj, out intLength, columnOrdinal);
+                TdsOperationStatus result = TryGetTokenLength(colmeta.tdsType, stateObj, out intLength);
                 if (result != TdsOperationStatus.Done)
                 {
                     length = 0;
@@ -8045,7 +8045,7 @@ namespace Microsoft.Data.SqlClient
         // DOES NOT handle plp data streams correctly!!!
         // Plp data streams length information should be obtained from GetDataLength
         //
-        internal TdsOperationStatus TryGetTokenLength(byte token, TdsParserStateObject stateObj, out int tokenLength, int columnOrdinal = -1)
+        internal TdsOperationStatus TryGetTokenLength(byte token, TdsParserStateObject stateObj, out int tokenLength)
         {
             Debug.Assert(token != 0, "0 length token!");
             TdsOperationStatus result;
@@ -8118,7 +8118,7 @@ namespace Microsoft.Data.SqlClient
                         if (stateObj.IsSnapshotContinuing())
                         {
                             tokenLength = stateObj.GetSnapshotStorageLength<byte>();
-                            Debug.Assert(tokenLength != 0, "stored buffer length on continue must contain the length of the data required for the token"); // row 585
+                            Debug.Assert(tokenLength != 0, "stored buffer length on continue must contain the length of the data required for the token");
                         }
                         else
                         {
@@ -8136,8 +8136,7 @@ namespace Microsoft.Data.SqlClient
                     else if (0 == (token & 0x0c))
                     {
                         // UNDONE: This should be uint
-                        var status =  stateObj.TryReadInt32(out tokenLength);
-                        return status;
+                        return stateObj.TryReadInt32(out tokenLength);
                     }
                     else
                     {

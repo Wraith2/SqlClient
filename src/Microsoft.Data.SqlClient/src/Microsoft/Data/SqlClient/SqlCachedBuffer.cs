@@ -147,27 +147,8 @@ namespace Microsoft.Data.SqlClient
             {
                 return string.Empty;
             }
-            //SqlXml sxml = new(ToStream());
-            //return sxml.Value;
-            
-            try
-            {
-                SqlXml sxml = new(ToStream());
-                return sxml.Value;
-            }
-            catch
-            {
-                string value = null;
-                using (StreamReader reader = new StreamReader(ToStream()))
-                using (StringWriter writer = new StringWriter())
-                {
-                    writer.Write(reader.ReadToEnd());
-                    writer.Flush();
-                    value = writer.GetStringBuilder().ToString();
-                }
-                Debugger.Break();
-                return null;
-            }
+            SqlXml sxml = new(ToStream());
+            return sxml.Value;
         }
 
         internal SqlString ToSqlString()

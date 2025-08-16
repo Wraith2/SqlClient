@@ -62,20 +62,17 @@ namespace Microsoft.Data.SqlClient
 
                 if (getDataError == TdsEnums.SNI_SUCCESS)
                 {
-                        
                     if (_inBuff.Length < dataSize)
                     {
                         Debug.Assert(true, "Unexpected dataSize on Read");
                         throw SQL.InvalidInternalPacketSize(StringsHelper.GetString(Strings.SqlMisc_InvalidArraySizeMessage));
                     }
 
-                    //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead}), packetId:{(buffer !=null ? Packet.GetIDFromHeader(buffer) : "" )}");
-
                     if (!usedPartialPacket)
                     {
                         _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
 
-                        SetBuffer(_inBuff, 0, (int)dataSize, "ProcessSniPacket(set after read)", skipCheck: true);
+                        SetBuffer(_inBuff, 0, (int)dataSize);
                     }
 
                     bool recurse = false;

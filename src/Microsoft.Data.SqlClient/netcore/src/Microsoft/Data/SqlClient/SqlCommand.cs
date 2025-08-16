@@ -1065,13 +1065,13 @@ namespace Microsoft.Data.SqlClient
                         }
 
                         if (!_pendingCancel)
-                        { 
+                        {
                             // Do nothing if already pending.
-                          // Before attempting actual cancel, set the _pendingCancel flag to false.
-                          // This denotes to other thread before obtaining stateObject from the
-                          // session pool that there is another thread wishing to cancel.
-                          // The period in question is between entering the ExecuteAPI and obtaining
-                          // a stateObject.
+                            // Before attempting actual cancel, set the _pendingCancel flag to false.
+                            // This denotes to other thread before obtaining stateObject from the
+                            // session pool that there is another thread wishing to cancel.
+                            // The period in question is between entering the ExecuteAPI and obtaining
+                            // a stateObject.
                             _pendingCancel = true;
 
                             TdsParserStateObject stateObj = _stateObj;
@@ -1585,7 +1585,8 @@ namespace Microsoft.Data.SqlClient
                 if (ADP.IsCatchableExceptionType(e))
                 {
                     ReliablePutStateObject();
-                };
+                }
+                ;
                 throw;
             }
             finally
@@ -1752,7 +1753,7 @@ namespace Microsoft.Data.SqlClient
                     asyncWrite,
                     isRetry,
                     methodName);
-                
+
                 if (reader != null)
                 {
                     if (task != null)
@@ -2031,11 +2032,13 @@ namespace Microsoft.Data.SqlClient
                 if (CachedAsyncState != null)
                 {
                     CachedAsyncState.ResetAsyncState();
-                };
+                }
+                ;
                 if (ADP.IsCatchableExceptionType(e))
                 {
                     ReliablePutStateObject();
-                };
+                }
+                ;
                 throw;
             }
             finally
@@ -2236,11 +2239,13 @@ namespace Microsoft.Data.SqlClient
                 if (CachedAsyncState != null)
                 {
                     CachedAsyncState.ResetAsyncState();
-                };
+                }
+                ;
                 if (ADP.IsCatchableExceptionType(e))
                 {
                     ReliablePutStateObject();
-                };
+                }
+                ;
                 throw;
             }
             finally
@@ -2563,7 +2568,7 @@ namespace Microsoft.Data.SqlClient
                                         {
                                             completion.TrySetResult(retryTask.Result);
                                         }
-                                    }, 
+                                    },
                                     state: globalCompletion,
                                     TaskScheduler.Default
                                 );
@@ -3068,7 +3073,7 @@ namespace Microsoft.Data.SqlClient
         }
 
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlCommand.xml' path='docs/members[@name="SqlCommand"]/ExecuteXmlReaderAsync[@name="default"]/*'/>
-        public Task<XmlReader> ExecuteXmlReaderAsync() => 
+        public Task<XmlReader> ExecuteXmlReaderAsync() =>
             ExecuteXmlReaderAsync(CancellationToken.None);
 
         /// <include file='../../../../../../../doc/snippets/Microsoft.Data.SqlClient/SqlCommand.xml' path='docs/members[@name="SqlCommand"]/ExecuteXmlReaderAsync[@name="CancellationToken"]/*'/>
@@ -4829,7 +4834,7 @@ namespace Microsoft.Data.SqlClient
                 task: out unused,
                 usedCache: out _,
                 method: method);
-            
+
             Debug.Assert(unused == null, "returned task during synchronous execution");
             return reader;
         }
@@ -5391,9 +5396,9 @@ namespace Microsoft.Data.SqlClient
                     else
                     {
                         AsyncHelper.ContinueTaskWithState(subTask, completion,
-                            state: completion,
-                            onSuccess: static (object state) => ((TaskCompletionSource<object>)state).SetResult(null)
-                        );
+                             state: completion,
+                             onSuccess: static (object state) => ((TaskCompletionSource<object>)state).SetResult(null)
+                         );
                     }
                 }
             );
