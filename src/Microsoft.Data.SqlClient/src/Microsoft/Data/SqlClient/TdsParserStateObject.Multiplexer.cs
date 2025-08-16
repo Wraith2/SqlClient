@@ -15,7 +15,7 @@ namespace Microsoft.Data.SqlClient
 
         public void ProcessSniPacket(PacketHandle packet, uint error)
         {
-            Log("ProcessSniPacket start");
+            Log(">>> ProcessSniPacket start");
             try
             {
                 if (LocalAppContextSwitches.UseCompatibilityProcessSni)
@@ -65,6 +65,7 @@ namespace Microsoft.Data.SqlClient
 
                     if (getDataError == TdsEnums.SNI_SUCCESS)
                     {
+                        
                         if (_inBuff.Length < dataSize)
                         {
                             Debug.Assert(true, "Unexpected dataSize on Read");
@@ -75,7 +76,7 @@ namespace Microsoft.Data.SqlClient
                         {
                             _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
 
-                            SetBuffer(_inBuff, 0, (int)dataSize, "ProcessSniPacket(set after read)");
+                            SetBuffer(_inBuff, 0, (int)dataSize, ">>>    ProcessSniPacket(set after read)");
                         }
 
                     bool recurse = false;
@@ -127,7 +128,7 @@ namespace Microsoft.Data.SqlClient
                                 // if some data was taken from the new packet adjust the counters
                                 if (dataSize != newDataLength || 0 != newDataOffset)
                                 {
-                                    SetBuffer(_inBuff, newDataOffset, newDataLength, "ProcessSniPacket(resize length)");
+                                    SetBuffer(_inBuff, newDataOffset, newDataLength, ">>>    ProcessSniPacket(resize length)");
                                 }
 
                             if (_snapshot != null)
@@ -183,7 +184,7 @@ namespace Microsoft.Data.SqlClient
                         {
                             if (_snapshotStatus != SnapshotStatus.NotActive && appended)
                             {
-                                Log($"!! calling movenext because {appendReason}");
+                                Log($">>>  calling movenext because {appendReason}");
                                 _snapshot.MoveNext();
                             }
                         }
@@ -201,7 +202,8 @@ namespace Microsoft.Data.SqlClient
             }
             finally
             {
-                Log("ProcessSniPacket end");
+                Log($">>>   current packetId:{Packet.GetIDFromHeader(_inBuff)}");
+                Log(">>> ProcessSniPacket end");
             }
         }
 

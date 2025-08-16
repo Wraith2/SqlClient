@@ -4080,14 +4080,13 @@ namespace Microsoft.Data.SqlClient
                     }
                     else
                     {
-                        //if (_sharedState._nextColumnDataToRead == 12 && _data[0].Int32 == 151)
+                        //if (_sharedState._nextColumnDataToRead == 11 && _stateObj._inBytesUsed == 7450 && Packet.GetIDFromHeader(_stateObj._inBuff) == 193)
                         //{
-                        //    if (!AppContext.TryGetSwitch("151", out bool _151))
+                        //    if (!AppContext.TryGetSwitch("697", out bool _697))
                         //    {
-                        //        _stateObj._readLog.Clear();
-                        //        AppContext.SetSwitch("151", true);
+                        //        AppContext.SetSwitch("697", true);
                         //    }
-                        //    //Debugger.Break();
+                        //    Debugger.Break();
                         //}
                         _stateObj.Log($"  col header _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextData:{_sharedState._nextColumnDataToRead}, type:{columnMetaData.metaType.TypeName}");
                         result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
@@ -4116,8 +4115,9 @@ namespace Microsoft.Data.SqlClient
                         if (!readHeaderOnly)
                         {
                             _sharedState._nextColumnDataToRead++;
-                            //_stateObj.Log($"  increment col after null read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
+                            _stateObj.Log($"  increment col after null read _nextHeader:{_sharedState._nextColumnHeaderToRead}, _nextColumnDataToRead:{_sharedState._nextColumnDataToRead}");
                             _sharedState._nextColumnDataToReadWrittenBy = (_sharedState._nextColumnDataToRead, "TryReadColumnInternal 5");
+                            _stateObj.Log($"  col completed {_sharedState._nextColumnDataToRead}");
                         }
                     }
                     else
@@ -5029,12 +5029,7 @@ namespace Microsoft.Data.SqlClient
                 // These variables will be captured in moreFunc so that we can skip searching for a row token once one has been read
                 bool rowTokenRead = false;
                 bool more = false;
-#if DEBUG
-                if (_stateObj._readLog.Count > 0)
-                {
-                    _stateObj._readLog.Clear();
-                }
-#endif
+
                 // Shortcut, do we have enough data to immediately do the ReadAsync?
                 try
                 {
@@ -5827,6 +5822,7 @@ namespace Microsoft.Data.SqlClient
             // If something has forced us to switch to SyncOverAsync mode while in an async task then we need to guarantee that we do the cleanup
             // This avoids us replaying non-replayable data (such as DONE or ENV_CHANGE tokens)
             var stateObj = _stateObj;
+            stateObj.Log($"SqlDataReader.CompleteAsyncCall({context.GetType().Name})");
             bool ignoreCloseToken = (stateObj != null) && (stateObj._syncOverAsync);
             CleanupAfterAsyncInvocation(ignoreCloseToken);
 
@@ -5909,7 +5905,6 @@ namespace Microsoft.Data.SqlClient
                     _snapshot._currentStream = _currentStream;
                     _snapshot._currentTextReader = _currentTextReader;
 
-                    _stateObj.Log("PrepareAsyncInvocation");
                     _stateObj.SetSnapshot();
                 }
             }
