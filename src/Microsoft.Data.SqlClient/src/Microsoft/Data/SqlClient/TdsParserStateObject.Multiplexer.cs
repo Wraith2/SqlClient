@@ -183,7 +183,7 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_snapshotStatus != SnapshotStatus.NotActive && appended)
                         {
-                            //Log($">>>  calling movenext because {appendReason}");
+                            Log($">>>  calling movenext");
                             _snapshot.MoveNext();
                         }
                     }
@@ -389,17 +389,9 @@ namespace Microsoft.Data.SqlClient
             {
                 if (data.Length >= TdsEnums.HEADER_LEN)
                 {
-                    if (data[0] != 4 && dataLength == 564)
-                    {
-                        Debugger.Break();
-                    }
                     // we have enough bytes to read the packet header and see how
                     // much data we are expecting it to contain
                     int packetDataLength = Packet.GetDataLengthFromHeader(data);
-                    if (packetDataLength > 567)
-                    {
-                        Debugger.Break();
-                    }
 
                     if (data.Length == TdsEnums.HEADER_LEN + packetDataLength)
                     {
