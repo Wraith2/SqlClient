@@ -198,7 +198,6 @@ namespace Microsoft.Data.SqlClient
                     throw SQL.ParsingError(ParsingErrorState.ProcessSniPacketFailed);
                 }
             }
-
         }
 
         private void SetPartialPacket(Packet packet)

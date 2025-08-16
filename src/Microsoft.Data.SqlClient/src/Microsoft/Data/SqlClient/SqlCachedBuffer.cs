@@ -165,6 +165,7 @@ namespace Microsoft.Data.SqlClient
                     writer.Flush();
                     value = writer.GetStringBuilder().ToString();
                 }
+                Debugger.Break();
                 return null;
             }
         }

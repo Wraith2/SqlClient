@@ -1297,13 +1297,13 @@ namespace Microsoft.Data.SqlClient
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
 
-            if (!skipCheck && buffer.Length >= TdsEnums.HEADER_LEN && inBytesRead>0)
-            {
-                if (buffer[0] != 4 || buffer[1] > 1 || buffer[7] != 0 || Packet.GetDataLengthFromHeader(buffer) > 32767)
-                {
-                    Debugger.Break();
-                }
-            }
+            //if (!skipCheck && buffer.Length >= TdsEnums.HEADER_LEN && inBytesRead>0)
+            //{
+            //    if (buffer[0] != 4 || buffer[1] > 1 || buffer[7] != 0 || Packet.GetDataLengthFromHeader(buffer) > 32767)
+            //    {
+            //        Debugger.Break();
+            //    }
+            //}
 
         internal void NewBuffer(int size)
         {
@@ -4280,13 +4280,13 @@ namespace Microsoft.Data.SqlClient
                 Debug.Assert(LocalAppContextSwitches.UseCompatibilityProcessSni || TdsEnums.HEADER_LEN + Packet.GetDataLengthFromHeader(buffer) == read, "partially read packets cannot be appended to the snapshot");
 #if DEBUG
 
-                if (buffer.Length >= TdsEnums.HEADER_LEN)
-                {
-                    if (buffer[0] != 4 || buffer[1] > 1 || buffer[7] != 0 || Packet.GetDataLengthFromHeader(buffer) > 32767)
-                    {
-                        Debugger.Break();
-                    }
-                }
+                //if (buffer.Length >= TdsEnums.HEADER_LEN)
+                //{
+                //    if (buffer[0] != 4 || buffer[1] > 1 || buffer[7] != 0 || Packet.GetDataLengthFromHeader(buffer) > 32767)
+                //    {
+                //        Debugger.Break();
+                //    }
+                //}
                 for (PacketData current = _firstPacket; current != null; current = current.NextPacket)
                 {
                     if (ReferenceEquals(current.Buffer, buffer))
