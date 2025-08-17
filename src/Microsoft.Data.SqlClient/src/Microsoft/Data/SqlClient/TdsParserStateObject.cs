@@ -1568,46 +1568,46 @@ namespace Microsoft.Data.SqlClient
             return TdsOperationStatus.Done;
         }
 
-        public TdsOperationStatus TryReadByteArrayWithContinue(int length, out byte[] bytes)
-        {
-            bytes = null;
-            int offset = 0;
-            byte[] temp = null;
-            (bool canContinue, bool isStarting, bool isContinuing) = GetSnapshotStatuses();
-            if (canContinue)
-            {
-                temp = TryTakeSnapshotStorage() as byte[];
-                Debug.Assert(temp != null || !isContinuing, "if continuing stored buffer must be present to contain previous data to continue from");
-                Debug.Assert(bytes == null || bytes.Length == length, "stored buffer length must be null or must have been created with the correct length");
+        //public TdsOperationStatus TryReadByteArrayWithContinue(int length, out byte[] bytes)
+        //{
+        //    bytes = null;
+        //    int offset = 0;
+        //    byte[] temp = null;
+        //    (bool canContinue, bool isStarting, bool isContinuing) = GetSnapshotStatuses();
+        //    if (canContinue)
+        //    {
+        //        temp = TryTakeSnapshotStorage() as byte[];
+        //        Debug.Assert(temp != null || !isContinuing, "if continuing stored buffer must be present to contain previous data to continue from");
+        //        Debug.Assert(bytes == null || bytes.Length == length, "stored buffer length must be null or must have been created with the correct length");
                 
-                if (temp != null)
-                {
-                    offset = GetSnapshotTotalSize();
-                }
-            }
+        //        if (temp != null)
+        //        {
+        //            offset = GetSnapshotTotalSize();
+        //        }
+        //    }
 
 
-            if (temp == null)
-            {
-                temp = new byte[length];
-            }
+        //    if (temp == null)
+        //    {
+        //        temp = new byte[length];
+        //    }
 
-            TdsOperationStatus result = TryReadByteArray(temp, length, out _, offset, isStarting || isContinuing);
+        //    TdsOperationStatus result = TryReadByteArray(temp, length, out _, offset, isStarting || isContinuing);
 
-            if (result == TdsOperationStatus.Done)
-            {
-                bytes = temp;
-            }
-            else if (result == TdsOperationStatus.NeedMoreData)
-            {
-                if (canContinue)
-                {
-                    SetSnapshotStorage(temp);
-                }
-            }
+        //    if (result == TdsOperationStatus.Done)
+        //    {
+        //        bytes = temp;
+        //    }
+        //    else if (result == TdsOperationStatus.NeedMoreData)
+        //    {
+        //        if (canContinue)
+        //        {
+        //            SetSnapshotStorage(temp);
+        //        }
+        //    }
 
-            return result;
-        }
+        //    return result;
+        //}
 
         // Takes no arguments and returns a byte from the buffer.  If the buffer is empty, it is filled
         // before the byte is returned.
@@ -2084,6 +2084,87 @@ namespace Microsoft.Data.SqlClient
 
             // BCL optimizes to not use char[] underneath
             value = encoding.GetString(buf, offset, length);
+            return TdsOperationStatus.Done;
+        }
+
+        internal TdsOperationStatus TryReadByteArrayWithContinue(int length, out byte[] value)
+        {
+            return TryReadByteArrayWithContinue(length, false, out value);
+        }
+        internal TdsOperationStatus TryReadByteArrayWithContinue(int length, bool isPlp, out byte[] value)
+        {
+            Debug.Assert(_syncOverAsync || !_asyncReadWithoutSnapshot, "This method is not safe to call when doing sync over async");
+
+            byte[] buf = null;
+            int offset = 0;
+            RequestContinue(true);
+            (bool canContinue, bool isStarting, bool isContinuing) = GetSnapshotStatuses();
+
+            if (isPlp)
+            {
+                bool compatibilityMode = LocalAppContextSwitches.UseCompatibilityAsyncBehaviour;
+                TdsOperationStatus result = TryReadPlpBytes(ref buf, 0, int.MaxValue, out length, canContinue && !compatibilityMode, canContinue && !compatibilityMode, compatibilityMode);
+                if (result != TdsOperationStatus.Done)
+                {
+                    value = null;
+                    return result;
+                }
+
+                AssertValidState();
+            }
+            else
+            {
+                if (((_inBytesUsed + length) > _inBytesRead) || (_inBytesPacket < length))
+                {
+                    int startOffset = 0;
+                    if (canContinue)
+                    {
+                        buf = TryTakeSnapshotStorage() as byte[];
+                        Debug.Assert(buf != null || !isContinuing, "if continuing stored buffer must be present to contain previous data to continue from");
+                        Debug.Assert(buf == null || buf.Length == length, "stored buffer length must be null or must have been created with the correct length");
+
+                        if (buf != null)
+                        {
+                            startOffset = GetSnapshotTotalSize();
+                        }
+                    }
+
+                    if (buf == null || buf.Length < length)
+                    {
+                        buf = new byte[length];
+                    }
+
+                    TdsOperationStatus result = TryReadByteArray(buf, length, out _, startOffset, canContinue);
+
+                    if (result != TdsOperationStatus.Done)
+                    {
+                        if (result == TdsOperationStatus.NeedMoreData)
+                        {
+                            if (canContinue)
+                            {
+                                SetSnapshotStorage(buf);
+                            }
+                        }
+                        value = null;
+                        return result;
+                    }
+
+                    AssertValidState();
+                }
+                else
+                {
+                    // assign local to point to _inBuff
+                    buf = _inBuff;
+                    offset = _inBytesUsed;
+                    Log(length);
+                    _inBytesUsed += length;
+                    _inBytesPacket -= length;
+
+                    AssertValidState();
+                }
+            }
+
+            value = buf;
             return TdsOperationStatus.Done;
         }
 
