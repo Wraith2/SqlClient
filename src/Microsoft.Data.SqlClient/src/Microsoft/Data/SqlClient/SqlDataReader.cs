@@ -3999,7 +3999,6 @@ namespace Microsoft.Data.SqlClient
                     }
                     else if (_sharedState._nextColumnHeaderToRead == i)
                     {
-                        Debug.Assert(_sharedState._nextColumnHeaderToRead == _sharedState._nextColumnDataToRead, "header and data values must be in sync");
                         bool isNull;
                         ulong dataLength;
                         result = _parser.TryProcessColumnHeader(columnMetaData, _stateObj, _sharedState._nextColumnHeaderToRead, out isNull, out dataLength);
