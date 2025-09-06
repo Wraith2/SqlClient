@@ -964,6 +964,7 @@ namespace Microsoft.Data.SqlClient
         internal int IncrementPendingCallbacks()
         {
             int remaining = Interlocked.Increment(ref _pendingCallbacks);
+            Log($"{caller}->IncrementPendingCallbacks {remaining}");
             SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.IncrementPendingCallbacks | ADV | State Object Id {0}, after incrementing _pendingCallbacks: {1}", _objectID, _pendingCallbacks);
             Debug.Assert(0 < remaining && remaining <= 3, $"_pendingCallbacks values is invalid after incrementing: {remaining}");
             return remaining;
@@ -1306,7 +1307,7 @@ namespace Microsoft.Data.SqlClient
             {
                 Debugger.Break();
             }
-            Log($"{caller}->SetBuffer({(buffer!=null && buffer.Length>=8 ? $"[{buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2},{buffer[3]:X2},{buffer[4]:X2},{buffer[5]:X2},{buffer[6]:X2},{buffer[7]:X2}]" : "short" )},{inBytesUsed},{inBytesRead})");
+            //Log($"{caller}->SetBuffer({(buffer!=null && buffer.Length>=8 ? $"[{buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2},{buffer[3]:X2},{buffer[4]:X2},{buffer[5]:X2},{buffer[6]:X2},{buffer[7]:X2}]" : "short" )},{inBytesUsed},{inBytesRead})");
         }
 
         internal void NewBuffer(int size)
@@ -3712,38 +3713,6 @@ namespace Microsoft.Data.SqlClient
             if (_snapshot != null)
             {
                 _snapshot._storage = buffer;
-            }
-        }
-
-        internal void SetSnapshotColumnHeaderInfo(bool isNull, ulong dataLength)
-        {
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
-            if (_snapshot != null)
-            {
-                _snapshot._hasColumnHeaderInfo = true;
-                _snapshot._isNull = isNull;
-                _snapshot._dataLength = dataLength;
-            }
-        }
-
-        internal (bool HasColumnHeaderInfo, bool IsNull, ulong DataLength) TryGetSnapshotColumnHeaderInfo()
-        {
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
-            if (_snapshot != null)
-            {
-                return (_snapshot._hasColumnHeaderInfo, _snapshot._isNull, _snapshot._dataLength);
-            }
-            return (false, false, 0);
-        }
-
-        internal void ClearSnapshotColumnHeaderInfo()
-        {
-            Debug.Assert(_snapshot != null, "should not access snapshot accessor functions without first checking that the snapshot is available");
-            if (_snapshot != null)
-            {
-                _snapshot._hasColumnHeaderInfo = false;
-                _snapshot._isNull = false;
-                _snapshot._dataLength = 0;
             }
         }
 

@@ -2338,7 +2338,6 @@ namespace Microsoft.Data.SqlClient
                 _stateObj.LogIndent();
                 if (writeTask != null)
                 {
-                    _stateObj.Log($"BeginExecuteReaderInternal write async");
                     AsyncHelper.ContinueTaskWithState(writeTask, localCompletion,
                         state: Tuple.Create(this, localCompletion),
                         onSuccess: state =>
@@ -2354,10 +2353,10 @@ namespace Microsoft.Data.SqlClient
                 }
                 _stateObj.LogDeIndent();
 
-                if (AppContext.TryGetSwitch("breakpart", out bool switchValue) && switchValue)
-                {
-                    Debugger.Break();
-                }
+                //if (AppContext.TryGetSwitch("breakpart", out bool switchValue) && switchValue)
+                //{
+                //    Debugger.Break();
+                //}
 
                 // When we use query caching for parameter encryption we need to retry on specific errors.
                 // In these cases finalize the call internally and trigger a retry when needed.
@@ -2393,7 +2392,6 @@ namespace Microsoft.Data.SqlClient
                     );
                 }
 
-                _stateObj.Log($"ExecuteReader returning taskId:{globalCompletion.Task.Id}");
                 return globalCompletion.Task;
             }
             finally
@@ -5352,7 +5350,6 @@ namespace Microsoft.Data.SqlClient
                     // When executing async, we need to keep the _stateObj alive...
                     PutStateObject();
                 }
-                _stateObj.Log("sent query");
             }
 
             Debug.Assert(isAsync || _stateObj == null, "non-null state object in RunExecuteReader");

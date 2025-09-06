@@ -114,10 +114,6 @@ namespace Microsoft.Data.SqlClient
                     Debugger.Break();
                 }
             }
-            else
-            {
-                Debugger.Break();
-            }
         }
 
         private static void WriteDispatcher(IntPtr key, IntPtr packet, uint error)

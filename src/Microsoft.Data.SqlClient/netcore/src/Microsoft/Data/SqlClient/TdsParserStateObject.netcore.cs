@@ -5,6 +5,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Threading;
@@ -61,10 +62,10 @@ namespace Microsoft.Data.SqlClient
 
         internal abstract uint CheckConnection();
 
-        internal int DecrementPendingCallbacks(bool release)
+        internal int DecrementPendingCallbacks(bool release, [CallerMemberName] string caller = null)
         {
-            
             int remaining = Interlocked.Decrement(ref _pendingCallbacks);
+            Log($"{caller}->DecrementPendingCallbacks {remaining}");
             SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.DecrementPendingCallbacks | ADV | State Object Id {0}, after decrementing _pendingCallbacks: {1}", _objectID, _pendingCallbacks);
             
             FreeGcHandle(remaining, release);
@@ -330,12 +331,10 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_executionContext != null)
                         {
-                            Log($"ReadAsyncCallback calling s_readAsyncCallbackComplete");
                             ExecutionContext.Run(_executionContext, s_readAsyncCallbackComplete, source);
                         }
                         else
                         {
-                            Log($"ReadAsyncCallback activated taskId:{source.Task.Id}");
                             source.TrySetResult(null);
                         }
                     }
@@ -343,12 +342,10 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_executionContext != null)
                         {
-                            Log($"ReadAsyncCallback calling ReadAsyncCallbackCaptureException");
                             ExecutionContext.Run(_executionContext, state => ReadAsyncCallbackCaptureException((TaskCompletionSource<object>)state), source);
                         }
                         else
                         {
-                            Log($"ReadAsyncCallback error path activated taskId:{source.Task.Id}");
                             ReadAsyncCallbackCaptureException(source);
                         }
                     }
