@@ -109,6 +109,14 @@ namespace Microsoft.Data.SqlClient
                 {
                     stateObj.ReadAsyncCallback(IntPtr.Zero, PacketHandle.FromNativePointer(packet), error);
                 }
+                else
+                {
+                    Debugger.Break();
+                }
+            }
+            else
+            {
+                Debugger.Break();
             }
         }
 

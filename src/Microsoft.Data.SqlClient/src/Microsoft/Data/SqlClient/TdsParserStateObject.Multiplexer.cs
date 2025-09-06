@@ -16,6 +16,7 @@ namespace Microsoft.Data.SqlClient
         public void ProcessSniPacket(PacketHandle packet, uint error)
         {
             Log(">>> ProcessSniPacket start");
+            LogIndent();
             try
             {
                 if (LocalAppContextSwitches.UseCompatibilityProcessSni)
@@ -71,6 +72,8 @@ namespace Microsoft.Data.SqlClient
                             Debug.Assert(true, "Unexpected dataSize on Read");
                             throw SQL.InvalidInternalPacketSize(StringsHelper.GetString(Strings.SqlMisc_InvalidArraySizeMessage));
                         }
+
+                        //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead}), packetId:{(buffer !=null ? Packet.GetIDFromHeader(buffer) : "" )}");
 
                         if (!usedPartialPacket)
                         {
@@ -202,7 +205,7 @@ namespace Microsoft.Data.SqlClient
             }
             finally
             {
-                Log($">>>   current packetId:{Packet.GetIDFromHeader(_inBuff)}");
+                LogDeIndent();
                 Log(">>> ProcessSniPacket end");
             }
         }

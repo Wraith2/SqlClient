@@ -2335,8 +2335,10 @@ namespace Microsoft.Data.SqlClient
                     }
                 }
 
+                _stateObj.LogIndent();
                 if (writeTask != null)
                 {
+                    _stateObj.Log($"BeginExecuteReaderInternal write async");
                     AsyncHelper.ContinueTaskWithState(writeTask, localCompletion,
                         state: Tuple.Create(this, localCompletion),
                         onSuccess: state =>
@@ -2349,6 +2351,12 @@ namespace Microsoft.Data.SqlClient
                 else
                 {
                     BeginExecuteReaderInternalReadStage(localCompletion);
+                }
+                _stateObj.LogDeIndent();
+
+                if (AppContext.TryGetSwitch("breakpart", out bool switchValue) && switchValue)
+                {
+                    Debugger.Break();
                 }
 
                 // When we use query caching for parameter encryption we need to retry on specific errors.
@@ -2385,6 +2393,7 @@ namespace Microsoft.Data.SqlClient
                     );
                 }
 
+                _stateObj.Log($"ExecuteReader returning taskId:{globalCompletion.Task.Id}");
                 return globalCompletion.Task;
             }
             finally
@@ -5343,6 +5352,7 @@ namespace Microsoft.Data.SqlClient
                     // When executing async, we need to keep the _stateObj alive...
                     PutStateObject();
                 }
+                _stateObj.Log("sent query");
             }
 
             Debug.Assert(isAsync || _stateObj == null, "non-null state object in RunExecuteReader");
@@ -5391,9 +5401,9 @@ namespace Microsoft.Data.SqlClient
                     else
                     {
                         AsyncHelper.ContinueTaskWithState(subTask, completion,
-                             state: completion,
-                             onSuccess: static (object state) => ((TaskCompletionSource<object>)state).SetResult(null)
-                         );
+                            state: completion,
+                            onSuccess: static (object state) => ((TaskCompletionSource<object>)state).SetResult(null)
+                        );
                     }
                 }
             );

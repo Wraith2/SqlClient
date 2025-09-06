@@ -1291,35 +1291,22 @@ namespace Microsoft.Data.SqlClient
             return TdsOperationStatus.Done;
         }
 
-        //private int __spid;
-        internal void SetBuffer(byte[] buffer, int inBytesUsed, int inBytesRead, [CallerMemberName] string caller = null, bool logPacket=false)
+        internal void SetBuffer(byte[] buffer, int inBytesUsed, int inBytesRead, [CallerMemberName] string caller = null)
         {
             _inBuff = buffer;
             _inBytesUsed = inBytesUsed;
             _inBytesRead = inBytesRead;
 
-            //if (buffer != null && buffer.Length >= TdsEnums.HEADER_LEN && inBytesRead>0)
-            //{
-            //    int packetId = Packet.GetIDFromHeader(buffer);
-            //    int spid = Packet.GetSpidFromHeader(buffer);
-            //    if (packetId <= 1)
-            //    {
-            //        __spid = spid;
-            //    }
-            //    else 
-            //    {
-            //        if (spid != __spid)
-            //        {
-            //            Debugger.Break();
-            //        }
-            //    }
-            //}
-
-            //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead}), packetId:{(buffer !=null ? Packet.GetIDFromHeader(buffer) : "" )}");
-            if (logPacket && buffer != null && buffer[0] != 0)
+            if (
+                buffer != null && 
+                inBytesRead !=0 && 
+                inBytesRead < buffer.Length && 
+                Packet.GetDataLengthFromHeader(buffer) == inBytesRead
+            )
             {
-                UsePacket(buffer.AsMemory(inBytesRead));
+                Debugger.Break();
             }
+            Log($"{caller}->SetBuffer({(buffer!=null && buffer.Length>=8 ? $"[{buffer[0]:X2},{buffer[1]:X2},{buffer[2]:X2},{buffer[3]:X2},{buffer[4]:X2},{buffer[5]:X2},{buffer[6]:X2},{buffer[7]:X2}]" : "short" )},{inBytesUsed},{inBytesRead})");
         }
 
         internal void NewBuffer(int size)
@@ -2844,6 +2831,7 @@ namespace Microsoft.Data.SqlClient
         internal TdsOperationStatus TryReadNetworkPacket()
         {
             Log(">> TryReadNetworkPacket start");
+            LogIndent();
             try
             {
 #if DEBUG
@@ -2947,12 +2935,14 @@ namespace Microsoft.Data.SqlClient
             }
             finally
             {
+                LogDeIndent();
                 Log(">> TryReadNetworkPacket end");
             }
         }
 
         internal void PrepareReplaySnapshot()
         {
+            Debug.Assert(_networkPacketTaskSource == null || _networkPacketTaskSource.Task.Status == TaskStatus.RanToCompletion);
             _networkPacketTaskSource = null;
             if (!_snapshot.MoveToContinue())
             {
@@ -3303,7 +3293,8 @@ namespace Microsoft.Data.SqlClient
                     handle = SessionHandle;
 
                     readFromNetwork = !PartialPacketContainsCompletePacket();
-                    if (readFromNetwork)
+                    Log($"ReadSni(readFromNetwork:{readFromNetwork})");
+					if (readFromNetwork)
                     {
                         if (!handle.IsNull)
                         {
@@ -3650,7 +3641,7 @@ namespace Microsoft.Data.SqlClient
             _snapshot.CaptureAsStart(this);
             _snapshotStatus = SnapshotStatus.NotActive;
             Log("");
-            Log($"-- {caller} moved to {SnapshotStatus.NotActive}, position:{_inBytesUsed}, length:{_inBytesRead}, packetId:{(_inBuff!=null ? Packet.GetIDFromHeader(_inBuff) : "")}");
+            Log($"-- {caller}->SetSnapshot moved to {SnapshotStatus.NotActive}, position:{_inBytesUsed}, length:{_inBytesRead}");
         }
 
         internal void ResetSnapshot([CallerMemberName] string caller = null)
@@ -3664,7 +3655,7 @@ namespace Microsoft.Data.SqlClient
             }
             _snapshotStatus = SnapshotStatus.NotActive;
             Log("");
-            Log($"-- {caller} moved to {SnapshotStatus.NotActive},position:{_inBytesUsed}, length:{_inBytesRead},  packetId:{(_inBuff != null ? Packet.GetIDFromHeader(_inBuff) : "")}");
+            Log($"-- {caller}->ResetSnapshot moved to {SnapshotStatus.NotActive},position:{_inBytesUsed}, length:{_inBytesRead}");
         }
 
         internal bool IsSnapshotAvailable()
@@ -4214,7 +4205,6 @@ namespace Microsoft.Data.SqlClient
                 internal void Restore(TdsParserStateObject stateObj, bool clearTemps)
                 {
                     stateObj._inBytesUsed = _inBytesUsed;
-                    stateObj.Log($"Restore(clearTemps:{clearTemps})");
                     stateObj._inBytesPacket = _inBytesPacket;
                     stateObj._messageStatus = _messageStatus;
                     stateObj._nullBitmapInfo = _nullBitmapInfo;
@@ -4385,8 +4375,7 @@ namespace Microsoft.Data.SqlClient
                 {
                     _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                     _stateObj._snapshotStatus = moveToMode;
-                    _stateObj.Log("");
-                    _stateObj.Log($"-- {caller} moved to {moveToMode} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}, packetId:{(_stateObj._inBuff != null ? Packet.GetIDFromHeader(_stateObj._inBuff) : "")}");
+                    _stateObj.Log($"-- {caller} moved to {moveToMode} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}");
                     retval = true;
                 }
 
@@ -4400,6 +4389,7 @@ namespace Microsoft.Data.SqlClient
                 MoveNext();
                 _replayStateData.Restore(_stateObj, clearTemps: true);
                 _stateObj.AssertValidState();
+                _stateObj.Log($"-- MoveToStart moved to {_stateObj._snapshotStatus} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}");
             }
 
             internal bool MoveToContinue([CallerMemberName] string caller = null)
@@ -4411,16 +4401,15 @@ namespace Microsoft.Data.SqlClient
                         _continueStateData.Restore(_stateObj, clearTemps: false);
                         _stateObj.SetBuffer(_current.Buffer, 0, _current.Read);
                         _stateObj._snapshotStatus = SnapshotStatus.ContinueRunning;
-                        _stateObj.Log("");
-                        _stateObj.Log($"-- {caller} moved to {_stateObj._snapshotStatus} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}, packetId:{(_stateObj._inBuff != null ? Packet.GetIDFromHeader(_stateObj._inBuff) : "")}");
+                        _stateObj.Log($"-- {caller} moved to {_stateObj._snapshotStatus} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}");
                         _stateObj.AssertValidState();
                         return true;
                     }
                     else
                     {
-                        _stateObj.Log("");
-                        _stateObj.Log($"-- {caller} failed move from {_stateObj._snapshotStatus} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}, packetId:{(_stateObj._inBuff != null ? Packet.GetIDFromHeader(_stateObj._inBuff) : "")}");
+                        _stateObj.Log($"-- {caller} failed move from {_stateObj._snapshotStatus} position:{_stateObj._inBytesUsed}, length:{_stateObj._inBytesRead}");
                     }
+                    _stateObj.Log($"MoveToContinue");
                 }
                 return false;
             }
@@ -4441,8 +4430,8 @@ namespace Microsoft.Data.SqlClient
                 Debug.Assert(stateObj._bTmpRead == 0, "Has partially read data when snapshot taken");
                 Debug.Assert(stateObj._partialHeaderBytesRead == 0, "Has partially read header when snapshot taken");
 #endif
-
                 AppendPacketData(stateObj._inBuff, stateObj._inBytesRead);
+                stateObj.Log("CaptureAsStart");
             }
 
             internal void CaptureAsContinue(TdsParserStateObject stateObj)
@@ -4533,7 +4522,6 @@ namespace Microsoft.Data.SqlClient
 
             internal void Clear()
             {
-                _stateObj.Log("Snapshot.Clear");
                 ClearState();
                 ClearPackets();
             }
@@ -4567,17 +4555,39 @@ namespace Microsoft.Data.SqlClient
         private readonly string _packetRoot = DebugRoot + $"\\{Guid.NewGuid():N}\\";
         private int _debugCounter = 0;
 
-        private readonly ReadOnlyMemory<byte>[] _packets = new ReadOnlyMemory<byte>[20];
+        private readonly ReadOnlyMemory<byte>[] _packets = new ReadOnlyMemory<byte>[128];
         private int _packetsIndex=-1;
 
-        private readonly string[] _log = new string[2048];
+        private readonly string[] _log = new string[4096];
         private int _logIndex = -1;
+        private int _logIndent;
+        private int _logId;
 
-        [Conditional("DEBUG"), DebuggerStepThrough]
+        //[Conditional("DEBUG"), DebuggerStepThrough]
         internal void Log(string message)
         {
+            _logId += 1;
+            string indent = "";
+            switch (_logIndent)
+            {
+                case 1:
+                    indent = "  ";
+                    break;
+                case 2:
+                    indent = "    ";
+                    break;
+                case 3:
+                    indent = "      ";
+                    break;
+                case 4:
+                    indent = "        ";
+                    break;
+                default:
+                    indent = new string(' ', _logIndent);
+                    break;
+            }
             _logIndex = (_logIndex + 1) % _log.Length;
-            _log[_logIndex] = message;
+            _log[_logIndex] = string.Concat(_logId.ToString("D4"), ": ",indent, message);
         }
 
         [Conditional("DEBUG"), DebuggerStepThrough]
@@ -4587,30 +4597,41 @@ namespace Microsoft.Data.SqlClient
             Log($"    ({_inBytesUsed - count}, {count}) {by}");
 #endif
         }
+//        [Conditional("DEBUG"), DebuggerStepThrough]
+//        internal void ClearLog()
+//        {
+//#if DEBUG
+//            Array.Clear(_log);
+//            _logIndex = -1;
+//#endif
+//        }
         [Conditional("DEBUG"), DebuggerStepThrough]
-        internal void ClearLog()
+        internal void LogIndent()
         {
-#if DEBUG
-            Array.Clear(_log);
-            _logIndex = -1;
-#endif
+            _logIndent += 1;
         }
         [Conditional("DEBUG"), DebuggerStepThrough]
-
+        internal void LogDeIndent()
+        {
+            _logIndent -= 1;
+        }
+        [Conditional("DEBUG"), DebuggerStepThrough]
         internal void NegateRead()
         {
 #if DEBUG
-            _logIndex = -1;
+            _logIndex -=1;
 #endif
         }
 
-        private void UsePacket(ReadOnlyMemory<byte> packet)
+        internal void UsePacket(ReadOnlyMemory<byte> packet)
         {
+            byte[] bytes = new byte[packet.Length];
+            packet.Span.CopyTo(bytes.AsSpan());
             _packetsIndex = (_packetsIndex + 1) % _packets.GetLength(0);
-            _packets[_packetsIndex] = packet;
+            _packets[_packetsIndex] = bytes;
         }
 
-        private void DumpPackets()
+        internal void DumpPackets()
         {
             for (int count = 0; count < _packets.Length; count++)
             {
@@ -4623,16 +4644,16 @@ namespace Microsoft.Data.SqlClient
             }
         }
 
-        private void DumpInBuff()
+        internal void DumpInBuff()
         {
             string filename = DebugRoot + $"packet-{DateTime.Now:yyyyMMdd-HHmmss}.bin";
             using (FileStream writer = File.OpenWrite(filename))
             {
-                writer.Write(_inBuff, 0 , _inBytesRead);
+                writer.Write(_inBuff, 0 , _inBuff.Length);
             }
         }
 
-        private void DumpLog()
+        internal void DumpLog()
         {
             string filename = DebugRoot + $"log-{DateTime.Now:yyyyMMdd-HHmmss}.log";
             using (var writer = new StreamWriter(File.OpenWrite(filename)))
@@ -4654,7 +4675,7 @@ namespace Microsoft.Data.SqlClient
             }
         }
 
-        private void DumpPacket(ReadOnlySpan<byte> bytes)
+        internal void DumpPacket(ReadOnlySpan<byte> bytes)
         {
             if (!Directory.Exists(_packetRoot))
             {
@@ -4662,30 +4683,28 @@ namespace Microsoft.Data.SqlClient
             }
 
             int uid = Interlocked.Increment(ref _debugCounter);
-            int id = bytes.Length > TdsEnums.HEADER_LEN ? Packet.GetIDFromHeader(bytes) : -1;
-            if (id != 0)
+
+            try
+            {
+                using (var file = File.OpenWrite(_packetRoot + $"packet-{uid}.bin"))
+                {
+                    file.Write(bytes);
+                }
+            }
+            catch
             {
                 try
                 {
-                    using (var file = File.OpenWrite(_packetRoot + $"packet-{uid}-{id:D2}.bin"))
-                    {
-                        file.Write(bytes);
-                    }
+                    File.Delete(DebugRoot + $"packet-{uid}-.bin");
                 }
                 catch
                 {
-                    try
-                    {
-                        File.Delete(DebugRoot + $"packet-{uid}-{id:D2}.bin");
-                    }
-                    catch
-                    {
-                    }
                 }
             }
+            
         }
 
-        private void DumpPacketsClear()
+        internal void DumpPacketsClear()
         {
             foreach (var file in Directory.EnumerateFiles(_packetRoot, "*.bin"))
             {

@@ -63,6 +63,7 @@ namespace Microsoft.Data.SqlClient
 
         internal int DecrementPendingCallbacks(bool release)
         {
+            
             int remaining = Interlocked.Decrement(ref _pendingCallbacks);
             SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.DecrementPendingCallbacks | ADV | State Object Id {0}, after decrementing _pendingCallbacks: {1}", _objectID, _pendingCallbacks);
             
@@ -329,10 +330,12 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_executionContext != null)
                         {
+                            Log($"ReadAsyncCallback calling s_readAsyncCallbackComplete");
                             ExecutionContext.Run(_executionContext, s_readAsyncCallbackComplete, source);
                         }
                         else
                         {
+                            Log($"ReadAsyncCallback activated taskId:{source.Task.Id}");
                             source.TrySetResult(null);
                         }
                     }
@@ -340,10 +343,12 @@ namespace Microsoft.Data.SqlClient
                     {
                         if (_executionContext != null)
                         {
+                            Log($"ReadAsyncCallback calling ReadAsyncCallbackCaptureException");
                             ExecutionContext.Run(_executionContext, state => ReadAsyncCallbackCaptureException((TaskCompletionSource<object>)state), source);
                         }
                         else
                         {
+                            Log($"ReadAsyncCallback error path activated taskId:{source.Task.Id}");
                             ReadAsyncCallbackCaptureException(source);
                         }
                     }

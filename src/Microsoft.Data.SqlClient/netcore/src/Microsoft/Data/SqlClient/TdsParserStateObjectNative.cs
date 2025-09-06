@@ -200,7 +200,12 @@ namespace Microsoft.Data.SqlClient
         protected override uint SniPacketGetData(PacketHandle packet, byte[] _inBuff, ref uint dataSize)
         {
             Debug.Assert(packet.Type == PacketHandle.NativePointerType, "unexpected packet type when requiring NativePointer");
-            return SniNativeWrapper.SniPacketGetData(packet.NativePointer, _inBuff, ref dataSize);
+            uint retval =  SniNativeWrapper.SniPacketGetData(packet.NativePointer, _inBuff, ref dataSize);
+            if (retval == 0 && dataSize>0)
+            {
+                UsePacket(_inBuff.AsMemory(0,(int)dataSize));
+            }
+            return retval;
         }
 
         protected override bool CheckPacket(PacketHandle packet, TaskCompletionSource<object> source)
@@ -209,10 +214,6 @@ namespace Microsoft.Data.SqlClient
             IntPtr ptr = packet.NativePointer;
             return IntPtr.Zero == ptr || IntPtr.Zero != ptr && source != null;
         }
-
-        public void ReadAsyncCallback(IntPtr key, IntPtr packet, uint error) => ReadAsyncCallback(key, packet, error);
-
-        public void WriteAsyncCallback(IntPtr key, IntPtr packet, uint sniError) => WriteAsyncCallback(key, packet, sniError);
 
         protected override void RemovePacketFromPendingList(PacketHandle ptr)
         {
@@ -266,6 +267,7 @@ namespace Microsoft.Data.SqlClient
         {
             if ((0 == remaining || release) && _gcHandle.IsAllocated)
             {
+                Log("_gcHandle freed, native sni consumer info is now invalid!!!");
                 _gcHandle.Free();
             }
         }

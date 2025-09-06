@@ -2389,78 +2389,88 @@ namespace Microsoft.Data.SqlClient
                         }
                     case TdsEnums.SQLCOLMETADATA:
                         {
-                            if (tokenLength != TdsEnums.VARNULL)
+                            stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
+                            stateObj.LogIndent();
+                            try
                             {
-                                _SqlMetaDataSet metadata;
-                                result = TryProcessMetaData(tokenLength, stateObj, out metadata,
-                                    cmdHandler?.ColumnEncryptionSetting ?? SqlCommandColumnEncryptionSetting.UseConnectionSetting);
+                                if (tokenLength != TdsEnums.VARNULL)
+                                {
+                                    _SqlMetaDataSet metadata;
+                                    result = TryProcessMetaData(tokenLength, stateObj, out metadata,
+                                        cmdHandler?.ColumnEncryptionSetting ?? SqlCommandColumnEncryptionSetting.UseConnectionSetting);
+                                    if (result != TdsOperationStatus.Done)
+                                    {
+                                        return result;
+                                    }
+                                    stateObj._cleanupMetaData = metadata;
+                                }
+                                else
+                                {
+                                    if (cmdHandler != null)
+                                    {
+                                        stateObj._cleanupMetaData = cmdHandler.MetaData;
+                                    }
+                                }
+
+                                byte peekedToken;
+                                result = stateObj.TryPeekByte(out peekedToken);
                                 if (result != TdsOperationStatus.Done)
                                 {
                                     return result;
                                 }
-                                stateObj._cleanupMetaData = metadata;
-                            }
-                            else
-                            {
-                                if (cmdHandler != null)
-                                {
-                                    stateObj._cleanupMetaData = cmdHandler.MetaData;
-                                }
-                            }
 
-                            byte peekedToken;
-                            result = stateObj.TryPeekByte(out peekedToken);
-                            if (result != TdsOperationStatus.Done)
-                            {
-                                return result;
-                            }
+                                if (TdsEnums.SQLDATACLASSIFICATION == peekedToken)
+                                {
+                                    byte dataClassificationToken;
+                                    result = stateObj.TryReadByte(out dataClassificationToken);
+                                    if (result != TdsOperationStatus.Done)
+                                    {
+                                        return result;
+                                    }
+                                    Debug.Assert(TdsEnums.SQLDATACLASSIFICATION == dataClassificationToken);
 
-                            if (TdsEnums.SQLDATACLASSIFICATION == peekedToken)
-                            {
-                                byte dataClassificationToken;
-                                result = stateObj.TryReadByte(out dataClassificationToken);
-                                if (result != TdsOperationStatus.Done)
-                                {
-                                    return result;
-                                }
-                                Debug.Assert(TdsEnums.SQLDATACLASSIFICATION == dataClassificationToken);
+                                    SensitivityClassification sensitivityClassification;
+                                    result = TryProcessDataClassification(stateObj, out sensitivityClassification);
+                                    if (result != TdsOperationStatus.Done)
+                                    {
+                                        return result;
+                                    }
+                                    if (dataStream != null)
+                                    {
+                                        result = dataStream.TrySetSensitivityClassification(sensitivityClassification);
+                                        if (result != TdsOperationStatus.Done)
+                                        {
+                                            return result;
+                                        }
+                                    }
 
-                                SensitivityClassification sensitivityClassification;
-                                result = TryProcessDataClassification(stateObj, out sensitivityClassification);
-                                if (result != TdsOperationStatus.Done)
-                                {
-                                    return result;
-                                }
-                                if (dataStream != null)
-                                {
-                                    result = dataStream.TrySetSensitivityClassification(sensitivityClassification);
+                                    // update peekedToken
+                                    result = stateObj.TryPeekByte(out peekedToken);
                                     if (result != TdsOperationStatus.Done)
                                     {
                                         return result;
                                     }
                                 }
 
-                                // update peekedToken
-                                result = stateObj.TryPeekByte(out peekedToken);
-                                if (result != TdsOperationStatus.Done)
+                                if (dataStream != null)
                                 {
-                                    return result;
+                                    result = dataStream.TrySetMetaData(stateObj._cleanupMetaData, (TdsEnums.SQLTABNAME == peekedToken || TdsEnums.SQLCOLINFO == peekedToken));
+                                    if (result != TdsOperationStatus.Done)
+                                    {
+                                        return result;
+                                    }
                                 }
-                            }
-
-                            if (dataStream != null)
-                            {
-                                result = dataStream.TrySetMetaData(stateObj._cleanupMetaData, (TdsEnums.SQLTABNAME == peekedToken || TdsEnums.SQLCOLINFO == peekedToken));
-                                if (result != TdsOperationStatus.Done)
+                                else if (bulkCopyHandler != null)
                                 {
-                                    return result;
+                                    bulkCopyHandler.SetMetaData(stateObj._cleanupMetaData);
                                 }
+                                break;
                             }
-                            else if (bulkCopyHandler != null)
+                            finally
                             {
-                                bulkCopyHandler.SetMetaData(stateObj._cleanupMetaData);
+                                stateObj.LogDeIndent();
+                                stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
                             }
-                            break;
                         }
                     case TdsEnums.SQLROW:
                     case TdsEnums.SQLNBCROW:
@@ -5615,13 +5625,16 @@ namespace Microsoft.Data.SqlClient
                 // non-blob columns
                 ulong longlen;
                 TdsOperationStatus result = TryGetDataLength(col, stateObj, out longlen, columnOrdinal);
-                if (columnOrdinal == 8 && longlen != 5)
+                if (result == TdsOperationStatus.Done)
                 {
-                    Debugger.Break();
-                }
-                if (columnOrdinal == 10 && longlen != 16)
-                {
-                    Debugger.Break();
+                    if (columnOrdinal == 8 && longlen != 5)
+                    {
+                        Debugger.Break();
+                    }
+                    if (columnOrdinal == 10 && longlen != 16)
+                    {
+                        Debugger.Break();
+                    }
                 }
                 if (result != TdsOperationStatus.Done)
                 {
@@ -8165,13 +8178,16 @@ namespace Microsoft.Data.SqlClient
                     {
                         byte value;
                         result = stateObj.TryReadByte(out value);
-                        if (columnOrdinal == 8 && value != 5)
+                        if (result == TdsOperationStatus.Done)
                         {
-                            Debugger.Break();  // row 345
-                        }
-                        if (columnOrdinal == 10 && value != 16)
-                        {
-                            Debugger.Break(); // row 354
+                            if (columnOrdinal == 8 && value != 5)
+                            {
+                                Debugger.Break();  // row 345
+                            }
+                            if (columnOrdinal == 10 && value != 16)
+                            {
+                                Debugger.Break(); // row 354
+                            }
                         }
                         if (result != TdsOperationStatus.Done)
                         {
