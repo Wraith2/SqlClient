@@ -2335,7 +2335,6 @@ namespace Microsoft.Data.SqlClient
                     }
                 }
 
-                _stateObj.LogIndent();
                 if (writeTask != null)
                 {
                     AsyncHelper.ContinueTaskWithState(writeTask, localCompletion,
@@ -2351,12 +2350,6 @@ namespace Microsoft.Data.SqlClient
                 {
                     BeginExecuteReaderInternalReadStage(localCompletion);
                 }
-                _stateObj.LogDeIndent();
-
-                //if (AppContext.TryGetSwitch("breakpart", out bool switchValue) && switchValue)
-                //{
-                //    Debugger.Break();
-                //}
 
                 // When we use query caching for parameter encryption we need to retry on specific errors.
                 // In these cases finalize the call internally and trigger a retry when needed.

@@ -15,24 +15,20 @@ namespace Microsoft.Data.SqlClient
 
         public void ProcessSniPacket(PacketHandle packet, uint error)
         {
-            //Log(">>> ProcessSniPacket start");
-            //LogIndent();
-            //try
-            //{
-                if (LocalAppContextSwitches.UseCompatibilityProcessSni)
+            if (LocalAppContextSwitches.UseCompatibilityProcessSni)
+            {
+                ProcessSniPacketCompat(packet, error);
+                return;
+            }
+
+            if (error != 0)
+            {
+                if ((_parser.State == TdsParserState.Closed) || (_parser.State == TdsParserState.Broken))
                 {
-                    ProcessSniPacketCompat(packet, error);
+                    // Do nothing with callback if closed or broken and error not 0 - callback can occur
+                    // after connection has been closed.  PROBLEM IN NETLIB - DESIGN FLAW.
                     return;
                 }
-
-                if (error != 0)
-                {
-                    if ((_parser.State == TdsParserState.Closed) || (_parser.State == TdsParserState.Broken))
-                    {
-                        // Do nothing with callback if closed or broken and error not 0 - callback can occur
-                        // after connection has been closed.  PROBLEM IN NETLIB - DESIGN FLAW.
-                        return;
-                    }
 
                 AddError(_parser.ProcessSNIError(this));
                 AssertValidState();
@@ -64,23 +60,23 @@ namespace Microsoft.Data.SqlClient
                     getDataError = GetSniPacket(packet, ref dataSize);
                 }
 
-                    if (getDataError == TdsEnums.SNI_SUCCESS)
-                    {
+                if (getDataError == TdsEnums.SNI_SUCCESS)
+                {
                         
-                        if (_inBuff.Length < dataSize)
-                        {
-                            Debug.Assert(true, "Unexpected dataSize on Read");
-                            throw SQL.InvalidInternalPacketSize(StringsHelper.GetString(Strings.SqlMisc_InvalidArraySizeMessage));
-                        }
+                    if (_inBuff.Length < dataSize)
+                    {
+                        Debug.Assert(true, "Unexpected dataSize on Read");
+                        throw SQL.InvalidInternalPacketSize(StringsHelper.GetString(Strings.SqlMisc_InvalidArraySizeMessage));
+                    }
 
-                        //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead}), packetId:{(buffer !=null ? Packet.GetIDFromHeader(buffer) : "" )}");
+                    //Log(caller +$"->SetBuffer({buffer?.Length ?? 0}, {inBytesUsed}, {inBytesRead}), packetId:{(buffer !=null ? Packet.GetIDFromHeader(buffer) : "" )}");
 
-                        if (!usedPartialPacket)
-                        {
-                            _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
+                    if (!usedPartialPacket)
+                    {
+                        _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
 
-                            SetBuffer(_inBuff, 0, (int)dataSize, "ProcessSniPacket(set after read)", skipCheck: true);
-                        }
+                        SetBuffer(_inBuff, 0, (int)dataSize, "ProcessSniPacket(set after read)", skipCheck: true);
+                    }
 
                     bool recurse = false;
                     bool appended = false;
@@ -181,33 +177,28 @@ namespace Microsoft.Data.SqlClient
                             }
                         }
 
-                        } while (recurse && _snapshot != null);
+                    } while (recurse && _snapshot != null);
 
-                        if (_snapshot != null)
-                        {
-                            if (_snapshotStatus != SnapshotStatus.NotActive && appended)
-                            {
-                                //Log($">>>  calling movenext because {appendReason}");
-                                _snapshot.MoveNext();
-                            }
-                        }
-
-                        SniReadStatisticsAndTracing();
-                        SqlClientEventSource.Log.TryAdvancedTraceBinEvent("TdsParser.ReadNetworkPacketAsyncCallback | INFO | ADV | State Object Id {0}, Packet read. In Buffer {1}, In Bytes Read: {2}", ObjectID, _inBuff, (ushort)_inBytesRead);
-
-                        AssertValidState();
-                    }
-                    else
+                    if (_snapshot != null)
                     {
-                        throw SQL.ParsingError(ParsingErrorState.ProcessSniPacketFailed);
+                        if (_snapshotStatus != SnapshotStatus.NotActive && appended)
+                        {
+                            //Log($">>>  calling movenext because {appendReason}");
+                            _snapshot.MoveNext();
+                        }
                     }
+
+                    SniReadStatisticsAndTracing();
+                    SqlClientEventSource.Log.TryAdvancedTraceBinEvent("TdsParser.ReadNetworkPacketAsyncCallback | INFO | ADV | State Object Id {0}, Packet read. In Buffer {1}, In Bytes Read: {2}", ObjectID, _inBuff, (ushort)_inBytesRead);
+
+                    AssertValidState();
                 }
-            //}
-            //finally
-            //{
-            //    LogDeIndent();
-            //    Log(">>> ProcessSniPacket end");
-            //}
+                else
+                {
+                    throw SQL.ParsingError(ParsingErrorState.ProcessSniPacketFailed);
+                }
+            }
+
         }
 
         private void SetPartialPacket(Packet packet)

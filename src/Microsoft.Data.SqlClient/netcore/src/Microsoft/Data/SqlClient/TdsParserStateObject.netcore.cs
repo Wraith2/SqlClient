@@ -5,7 +5,6 @@
 using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Threading;
@@ -62,7 +61,7 @@ namespace Microsoft.Data.SqlClient
 
         internal abstract uint CheckConnection();
 
-        internal int DecrementPendingCallbacks(bool release, [CallerMemberName] string caller = null)
+        internal int DecrementPendingCallbacks(bool release)
         {
             int remaining = Interlocked.Decrement(ref _pendingCallbacks);
             SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.DecrementPendingCallbacks | ADV | State Object Id {0}, after decrementing _pendingCallbacks: {1}", _objectID, _pendingCallbacks);

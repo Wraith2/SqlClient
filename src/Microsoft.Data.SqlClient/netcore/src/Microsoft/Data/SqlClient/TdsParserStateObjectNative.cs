@@ -267,7 +267,6 @@ namespace Microsoft.Data.SqlClient
         {
             if ((0 == remaining || release) && _gcHandle.IsAllocated)
             {
-                Log("_gcHandle freed, native sni consumer info is now invalid!!!");
                 _gcHandle.Free();
             }
         }

@@ -946,7 +946,6 @@ namespace Microsoft.Data.SqlClient
                                 {
                                     throw SQL.SynchronousCallMayNotPend();
                                 }
-
                                 // DO NOT USE stateObj after this point - it has been returned to the TdsParser's session pool and potentially handed out to another thread
                             }
                         }

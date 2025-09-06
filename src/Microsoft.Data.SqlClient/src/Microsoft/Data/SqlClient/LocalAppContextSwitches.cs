@@ -77,7 +77,6 @@ namespace Microsoft.Data.SqlClient
         {
             get
             {
-                //s_useCompatibilityProcessSni = Tristate.True;
                 if (s_useCompatibilityProcessSni == Tristate.NotInitialized)
                 {
                     // Check if the switch has been set by the AppContext switch directly
