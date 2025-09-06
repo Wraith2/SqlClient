@@ -15,10 +15,10 @@ namespace Microsoft.Data.SqlClient
 
         public void ProcessSniPacket(PacketHandle packet, uint error)
         {
-            Log(">>> ProcessSniPacket start");
-            LogIndent();
-            try
-            {
+            //Log(">>> ProcessSniPacket start");
+            //LogIndent();
+            //try
+            //{
                 if (LocalAppContextSwitches.UseCompatibilityProcessSni)
                 {
                     ProcessSniPacketCompat(packet, error);
@@ -79,7 +79,7 @@ namespace Microsoft.Data.SqlClient
                         {
                             _lastSuccessfulIOTimer._value = DateTime.UtcNow.Ticks;
 
-                            SetBuffer(_inBuff, 0, (int)dataSize, ">>>    ProcessSniPacket(set after read)");
+                            SetBuffer(_inBuff, 0, (int)dataSize, "ProcessSniPacket(set after read)", skipCheck: true);
                         }
 
                     bool recurse = false;
@@ -131,7 +131,7 @@ namespace Microsoft.Data.SqlClient
                                 // if some data was taken from the new packet adjust the counters
                                 if (dataSize != newDataLength || 0 != newDataOffset)
                                 {
-                                    SetBuffer(_inBuff, newDataOffset, newDataLength, ">>>    ProcessSniPacket(resize length)");
+                                    SetBuffer(_inBuff, newDataOffset, newDataLength, "ProcessSniPacket(resize length)");
                                 }
 
                             if (_snapshot != null)
@@ -187,7 +187,7 @@ namespace Microsoft.Data.SqlClient
                         {
                             if (_snapshotStatus != SnapshotStatus.NotActive && appended)
                             {
-                                Log($">>>  calling movenext because {appendReason}");
+                                //Log($">>>  calling movenext because {appendReason}");
                                 _snapshot.MoveNext();
                             }
                         }
@@ -202,12 +202,12 @@ namespace Microsoft.Data.SqlClient
                         throw SQL.ParsingError(ParsingErrorState.ProcessSniPacketFailed);
                     }
                 }
-            }
-            finally
-            {
-                LogDeIndent();
-                Log(">>> ProcessSniPacket end");
-            }
+            //}
+            //finally
+            //{
+            //    LogDeIndent();
+            //    Log(">>> ProcessSniPacket end");
+            //}
         }
 
         private void SetPartialPacket(Packet packet)
@@ -300,8 +300,17 @@ namespace Microsoft.Data.SqlClient
                         int payloadBytesAvailable = Math.Min(data.Length, payloadBytesNeeded);
 
                         ReadOnlySpan<byte> payloadSource = data.Slice(0, payloadBytesAvailable);
-                        Span<byte> payloadTarget = partialPacket.Buffer.AsSpan(partialPacket.CurrentLength, payloadBytesAvailable);
-                        payloadSource.CopyTo(payloadTarget);
+                        try
+                        {
+                            Span<byte> payloadTarget = partialPacket.Buffer.AsSpan(partialPacket.CurrentLength, payloadBytesAvailable);
+                            payloadSource.CopyTo(payloadTarget);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine(ex.Message);
+                            Span<byte> payloadTarget = partialPacket.Buffer.AsSpan(partialPacket.CurrentLength, payloadBytesAvailable);
+                            payloadSource.CopyTo(payloadTarget);
+                        }
 
                         partialPacket.CurrentLength = partialPacket.CurrentLength + payloadBytesAvailable;
                         bytesConsumed += payloadBytesAvailable;
@@ -390,9 +399,17 @@ namespace Microsoft.Data.SqlClient
             {
                 if (data.Length >= TdsEnums.HEADER_LEN)
                 {
+                    if (data[0] != 4 && dataLength == 564)
+                    {
+                        Debugger.Break();
+                    }
                     // we have enough bytes to read the packet header and see how
                     // much data we are expecting it to contain
                     int packetDataLength = Packet.GetDataLengthFromHeader(data);
+                    if (packetDataLength > 567)
+                    {
+                        Debugger.Break();
+                    }
 
                     if (data.Length == TdsEnums.HEADER_LEN + packetDataLength)
                     {

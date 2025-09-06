@@ -2389,7 +2389,7 @@ namespace Microsoft.Data.SqlClient
                         }
                     case TdsEnums.SQLCOLMETADATA:
                         {
-                            stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
+                            //stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
                             stateObj.LogIndent();
                             try
                             {
@@ -2469,7 +2469,7 @@ namespace Microsoft.Data.SqlClient
                             finally
                             {
                                 stateObj.LogDeIndent();
-                                stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
+                                //stateObj.Log("TryRun(TdsEnums.SQLCOLMETADATA)");
                             }
                         }
                     case TdsEnums.SQLROW:
@@ -6459,7 +6459,7 @@ namespace Microsoft.Data.SqlClient
                                 if (stateObj._readerState != null)
                                 {
                                     stateObj._readerState._nextColumnDataToRead++;
-                                    stateObj.Log($"SqlDataReader.TryReadSqlValue _nextHeader:{stateObj._readerState._nextColumnHeaderToRead}, _nextData:{stateObj._readerState._nextColumnDataToRead}");
+                                    //stateObj.Log($"SqlDataReader.TryReadSqlValue _nextHeader:{stateObj._readerState._nextColumnHeaderToRead}, _nextData:{stateObj._readerState._nextColumnDataToRead}");
                                 }
 
                                 DrainData(stateObj);

@@ -65,7 +65,6 @@ namespace Microsoft.Data.SqlClient
         internal int DecrementPendingCallbacks(bool release, [CallerMemberName] string caller = null)
         {
             int remaining = Interlocked.Decrement(ref _pendingCallbacks);
-            Log($"{caller}->DecrementPendingCallbacks {remaining}");
             SqlClientEventSource.Log.TryAdvancedTraceEvent("TdsParserStateObject.DecrementPendingCallbacks | ADV | State Object Id {0}, after decrementing _pendingCallbacks: {1}", _objectID, _pendingCallbacks);
             
             FreeGcHandle(remaining, release);
