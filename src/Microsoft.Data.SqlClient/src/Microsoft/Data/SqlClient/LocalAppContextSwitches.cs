@@ -83,11 +83,11 @@ namespace Microsoft.Data.SqlClient
                     // If it has not been set, we default to true.
                     if (!AppContext.TryGetSwitch(UseCompatibilityProcessSniString, out bool returnedValue) || returnedValue)
                     {
-                        s_useCompatibilityProcessSni = Tristate.True;
+                        s_useCompatibilityProcessSni = Tristate.False;
                     }
                     else
                     {
-                        s_useCompatibilityProcessSni = Tristate.False;
+                        s_useCompatibilityProcessSni = Tristate.True;
                     }
                 }
                 return s_useCompatibilityProcessSni == Tristate.True;
